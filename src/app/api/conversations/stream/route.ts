@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
+import { ClaudeProviderUnavailableError } from '@/server/claude/client'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import { errorLogFields } from '@/domain/error-report'
@@ -33,7 +34,7 @@ import {
 } from '@/domain/recipe-gen-config'
 import { parseProCaps } from '@/domain/pro-caps'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
-import { QuotaExceededError } from '@/server/quota/atomic'
+import { QuotaExceededError, releaseQuotaHold, reserveQuotaHold } from '@/server/quota/atomic'
 
 /**
  * Modo CONVERSA — streaming + destilação (issue #12, ADR-0009/0010).
@@ -77,6 +78,13 @@ import { QuotaExceededError } from '@/server/quota/atomic'
  *
  * Aviso pós-geração (ADR-0004): só decidePostGenerationRestrictionNotices(receita destilada)
  * roda — NÃO há scan pré-geração de Briefing (a conversa não tem Briefing).
+ *
+ * RESERVA de cota (#640/#641, ADR-0055): logo antes de abrir o stream, a rota RESERVA o slot do turno
+ * (`reserveQuotaHold`) sob a advisory lock do gate; estourou ⇒ o MESMO 429 JSON, sem tocar o Claude. A reserva
+ * nasce cobrada: a destilação persistida a consome (a `generation` conta no lugar dela) e ela só volta quando o
+ * próprio `streamConversation` falha ANTES de qualquer evento com um erro que prova "não cobrado"
+ * (`ClaudeProviderUnavailableError`). Depois que o stream começou, toda saída fica cobrada: abort do cliente
+ * (inclusive durante a destilação), destilação inválida, 23505, `controller.error`. Um turno = um slot.
  */
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
@@ -250,9 +258,6 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
   }
-  // #446: gate ATÔMICO threado na destilação (persistGeneration). Estourou na corrida ⇒ QuotaExceededError,
-  // capturado no `catch` do stream → frame terminal {type:'error',error:'limite_geracao'} (in-band).
-  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap } : undefined
 
   // Sinal de abort do request: em disconnect do cliente HTTP, o loop de tokens para e a
   // destilação é PULADA (não se queima quota gerando p/ um cliente que sumiu). Passa também
@@ -278,9 +283,30 @@ export async function POST(req: Request): Promise<Response> {
   const axes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
   const promptStamp = promptStampFor(axes)
 
+  // 4c. #640/#641 (ADR-0055): RESERVA o slot do turno IMEDIATAMENTE antes de abrir o stream — depois de tudo
+  // que pode lançar ou devolver 4xx (nada entre aqui e o `new ReadableStream` lança). Sob a advisory lock do
+  // gate: só `cap - contagem` pedidos paralelos passam; os demais levam o MESMO 429 JSON, sem tocar o Claude.
+  // cap ∞ ⇒ `null` (sem lock, sem linha).
+  let holdId: string | null
+  try {
+    holdId = await reserveQuotaHold(getDb(), { userId: ownerId, kind: 'recipe_gen', cap })
+  } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return Response.json({ error: 'limite_geracao', retryAfterMs: err.retryAfterMs }, { status: 429 })
+    }
+    throw err
+  }
+  // #446: gate ATÔMICO threado na destilação (persistGeneration). Estourou na corrida ⇒ QuotaExceededError,
+  // capturado no `catch` do stream → frame terminal {type:'error',error:'limite_geracao'} (in-band).
+  // ADR-0055: o gate CONSOME a reserva deste turno (`consumeHoldId`) antes da recontagem.
+  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap, consumeHoldId: holdId } : undefined
+
   // 5. Abre o stream NDJSON: tokens primeiro, depois UM frame terminal, depois fecha.
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // ADR-0055: o `streamConversation` ainda não rendeu nem terminou? Só nessa fase uma falha pode devolver
+      // a reserva do turno.
+      let streamPending = true
       try {
         // 1ª chamada (ADR-0009): streama texto token-a-token. Acumula a resposta do
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
@@ -296,12 +322,16 @@ export async function POST(req: Request): Promise<Response> {
           settings,
         })
         for await (const text of tokens) {
+          streamPending = false
           // Disconnect do cliente: para o loop ANTES de enfileirar. Sem cliente p/ receber, o
           // stream do seam é cancelado (via `signal`) e a destilação é pulada — nada persiste.
+          // ADR-0055: a reserva do turno fica COBRADA (o stream já começou a ser pago).
           if (signal.aborted) return
           assistantText += text
           controller.enqueue(ndjsonLine({ type: 'token', text }))
         }
+
+        streamPending = false
 
         // Aborts MID-stream já foram tratados pelo early-return DENTRO do loop de tokens
         // acima. Este check pós-loop guarda o que vem DEPOIS: o append da Transcrição, a
@@ -412,8 +442,14 @@ export async function POST(req: Request): Promise<Response> {
         controller.close()
       } catch (err) {
         // Abort do cliente em voo (o seam estoura com AbortError): não é falha real, é
-        // disconnect — não loga como erro nem tenta sinalizar um cliente que já sumiu.
+        // disconnect — não loga como erro nem tenta sinalizar um cliente que já sumiu. ADR-0055: cobrado.
         if (signal.aborted) return
+        // ADR-0055: o provedor recusou o stream ANTES de qualquer evento, provadamente sem cobrar (HTTP de erro
+        // ou conexão recusada — o seam já classificou). ÚNICO caso que devolve a reserva do turno; o resto do
+        // `catch` (23505, cota, destilação, erro depois do 1º evento) deixa o slot cobrado.
+        if (streamPending && err instanceof ClaudeProviderUnavailableError) {
+          await releaseQuotaHold(getDb(), holdId)
+        }
         // Corrida de append na MESMA Session: dois requests concorrentes batem no UNIQUE
         // (creation_session_id, seq) → 23505. Em vez de um close MUDO (que o cliente lê como
         // queda de stream ambígua), emite um frame terminal LIMPO e determinístico e fecha.

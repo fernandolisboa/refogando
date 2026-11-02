@@ -54,7 +54,11 @@ export type GenerationOutput =
     }
   | { kind: 'refusal' }
   | { kind: 'max_tokens' }
-  | { kind: 'parse_failed' }
+  // `cause: 'provider'` (ADR-0055): a chamada provadamente NÃO foi cobrada — o provedor respondeu erro HTTP
+  // ou a conexão foi recusada antes de qualquer resposta, e nenhuma chamada anterior do mesmo método voltou.
+  // Só aí a borda DEVOLVE a reserva de cota; sem `cause` (saída nula após o reparo, truncada, prazo de 50 s,
+  // abort do cliente) a reserva fica cobrada. `classify` IGNORA o campo (os dois casos são `invalid`).
+  | { kind: 'parse_failed'; cause?: 'provider' }
 
 export type ClassifyResult =
   | { outcome: 'success' | 'degraded' | 'playful'; recipe: ReceitaGenT; advisory: string | null }

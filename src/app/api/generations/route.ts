@@ -49,7 +49,12 @@ import {
   type RecipeVariantConfig,
 } from '@/domain/recipe-variant-config'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
-import { QuotaExceededError, assertRecipeGenSlotInTx } from '@/server/quota/atomic'
+import {
+  QuotaExceededError,
+  assertRecipeGenSlotInTx,
+  releaseQuotaHold,
+  reserveQuotaHold,
+} from '@/server/quota/atomic'
 
 /**
  * Helper PURO da borda (#423, Regra C do contrato de eixos ADR-0029): resolve o eixo `variacaoDivergente`
@@ -77,6 +82,12 @@ function resolveVariacaoAxis(
  * via creation_session.user_id) e decide pela função pura `decideRecipeGenQuota`. Estourou ⇒ 429
  * `limite_geracao` com `retryAfterMs` (countdown), o seam NÃO é tocado (custo barrado). cap ∞
  * (admin/papel ilimitado) pula a query de contagem.
+ *
+ * RESERVA antes da chamada paga (#641, ADR-0055): depois do pré-check e de toda validação que dá 4xx, a rota
+ * RESERVA o slot (`reserveQuotaHold`, 2 no "gerar 2") sob a advisory lock do gate; estourou ⇒ o MESMO 429. A
+ * reserva nasce cobrada: o persist a consome (a `generation` conta no lugar dela) e só a falha provadamente
+ * não paga do provedor (`parse_failed` com `cause:'provider'`) a devolve. Saída inválida (502) CONSOME a cota,
+ * sem linha de `generation` (ADR-0006 intacto).
  *
  * Status: success|degraded|playful → 201 (Receita privada criada); impossible → 200
  * (hard-stop honesto, sem Receita); invalid → 502 (falha upstream, NÃO persiste nada).
@@ -372,9 +383,33 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
   }
+  // #641 (ADR-0055): RESERVA o slot ANTES da chamada paga — depois do pré-check e de TODAS as validações que
+  // devolvem 4xx (daqui até o Claude não há mais 4xx). Sob a advisory lock do gate: reconta eventos + reservas
+  // de outros pedidos, e só `cap - contagem` pedidos paralelos passam; os demais levam o MESMO 429 de antes, sem
+  // tocar o Claude. "Gerar 2" reserva 2 slots. cap ∞ ⇒ `null` (sem lock, sem linha).
+  let holdId: string | null
+  try {
+    holdId = await reserveQuotaHold(getDb(), {
+      userId: ownerId,
+      kind: 'recipe_gen',
+      cap,
+      slots: variar2 ? 2 : 1,
+    })
+  } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return Response.json(
+        { error: variar2 ? 'limite_geracao_variacao' : 'limite_geracao', retryAfterMs: err.retryAfterMs },
+        { status: 429 },
+      )
+    }
+    throw err
+  }
   // #446: gate ATÔMICO threado em persistGeneration — reconta+decide+insere SOB a advisory lock do
   // usuário, na MESMA tx do INSERT. Estourou (corrida) ⇒ persistGeneration LANÇA QuotaExceededError.
-  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap: effectiveCap } : undefined
+  // ADR-0055: o gate CONSOME a reserva deste pedido (`consumeHoldId`) sob a lock, antes da recontagem.
+  const quotaGate = Number.isFinite(cap)
+    ? { userId: ownerId, cap: effectiveCap, consumeHoldId: holdId }
+    : undefined
 
   // origin por modo (#88): conversation já foi rejeitado acima (vive na rota de stream), então
   // só restam free_text → ai_free_text e structured → ai_structured.
@@ -424,6 +459,10 @@ export async function POST(req: Request): Promise<Response> {
         return c.reason ?? c.result.outcome
       })
       console.error('[generations] lote de variações inválido (→ 502):', { reasons })
+      // ADR-0055: só o lote que falhou no provedor SEM cobrança devolve os 2 slots; saída inválida os consome.
+      if (outs.some((o) => o.kind === 'parse_failed' && o.cause === 'provider')) {
+        await releaseQuotaHold(getDb(), holdId)
+      }
       return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
     }
 
@@ -442,7 +481,8 @@ export async function POST(req: Request): Promise<Response> {
       outcome: 'success' | 'degraded' | 'playful'
       advisory: string | null
     }[] = []
-    // #446: as DUAS variações persistem numa ÚNICA transação sob UM advisory lock. O gate atômico
+    // #446: as DUAS variações persistem numa ÚNICA transação sob UM advisory lock. O gate atômico consome
+    // a reserva de 2 slots deste pedido (ADR-0055) e
     // reconta os 2 slots (effectiveCap=cap-1 ⇒ permitido ⟺ cabem 2) ANTES de qualquer insert; estourou
     // ⇒ QuotaExceededError, a tx REVERTE e NENHUMA das duas nasce (fecha a corrida — antes eram 2 tx
     // separadas e o slot "reservado" pela 1ª podia ser roubado entre os commits). Os embeddings (rede)
@@ -543,8 +583,10 @@ export async function POST(req: Request): Promise<Response> {
   const usage = out.kind === 'object' ? out.usage : undefined
 
   // Erro de sistema puro: NÃO persiste nada (sem creation_session/generation/recipe/briefing).
+  // ADR-0055: a reserva fica COBRADA (a chamada foi paga), salvo a falha provadamente não paga do provedor.
   if (result.outcome === 'invalid') {
     console.error('[generations] geração inválida (→ 502):', { mode, reason: invalidReason })
+    if (out.kind === 'parse_failed' && out.cause === 'provider') await releaseQuotaHold(getDb(), holdId)
     return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
   }
 

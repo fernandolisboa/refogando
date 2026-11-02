@@ -40,7 +40,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
-import { QuotaExceededError } from '@/server/quota/atomic'
+import { QuotaExceededError, releaseQuotaHold, reserveQuotaHold } from '@/server/quota/atomic'
 
 /**
  * REGENERAÇÃO — nova versão IMUTÁVEL por linhagem (issue #20). O KEYSTONE de "Minhas
@@ -67,6 +67,9 @@ import { QuotaExceededError } from '@/server/quota/atomic'
  *        na Busca, #14) → { kind:'ok', outcome, recipeId, advisory }.
  *      - impossible → { kind:'impossible', advisory } (nada de Receita; persistido como episódio).
  *      - invalid → { kind:'invalid' } (erro de sistema; NADA é persistido — ADR-0006).
+ *   Entre o teto e o Claude, a RESERVA do slot (#641, ADR-0055): `reserveQuotaHold` sob a advisory lock
+ *   (estourou ⇒ limite_geracao, o Claude não é tocado); o persist a consome; invalid a deixa cobrada, salvo
+ *   `parse_failed` com `cause:'provider'` (a chamada provadamente não foi cobrada), que a devolve.
  *
  * REUSO (decisão #20): estende `persistGeneration` com `lineage` opcional e reusa o caminho
  * `existingSessionId` (insere a generation na sessão da predecessora). origin INHERITED no
@@ -252,21 +255,36 @@ export async function regenerateRecipe(
     const quota = decideRecipeGenQuota({ cap, recentAt, now })
     if (!quota.allowed) return { kind: 'limite_geracao', retryAfterMs: quota.retryAfterMs }
   }
-  // #446: gate ATÔMICO threado em persistGeneration (reconta+decide+insere SOB a advisory lock, na MESMA
-  // tx do INSERT). Estourou na corrida ⇒ QuotaExceededError, capturado abaixo → { kind:'limite_geracao' }.
-  const quotaGate = Number.isFinite(cap) ? { userId: viewerId, cap } : undefined
-
-  // ── Claude (single-shot) → classify ──────────────────────────────────────────────
   // #318: constrange a cozinha da SAÍDA ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
   // ATIVO do DB DIRETO (sem cache de escrita); a IA só re-emite cozinhas ativas na regeneração.
   const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(db))]
+
+  // #641 (ADR-0055): RESERVA o slot ANTES do Claude, sob a advisory lock do gate (eventos + reservas de outros
+  // pedidos). Estourou ⇒ limite_geracao, o Claude NÃO é tocado. cap ∞ ⇒ `null` (sem lock, sem linha).
+  let holdId: string | null
+  try {
+    holdId = await reserveQuotaHold(db, { userId: viewerId, kind: 'recipe_gen', cap })
+  } catch (err) {
+    if (err instanceof QuotaExceededError) return { kind: 'limite_geracao', retryAfterMs: err.retryAfterMs }
+    throw err
+  }
+  // #446: gate ATÔMICO threado em persistGeneration (reconta+decide+insere SOB a advisory lock, na MESMA
+  // tx do INSERT). Estourou na corrida ⇒ QuotaExceededError, capturado abaixo → { kind:'limite_geracao' }.
+  // ADR-0055: o gate CONSOME a reserva deste pedido (`consumeHoldId`) antes da recontagem.
+  const quotaGate = Number.isFinite(cap) ? { userId: viewerId, cap, consumeHoldId: holdId } : undefined
+
+  // ── Claude (single-shot) → classify ──────────────────────────────────────────────
   const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, settings, cozinhaSlugs, axes })
   const result = classify(out)
   // #463: telemetria de custo da chamada (só o branch 'object' a carrega) → persist deriva o cost_usd.
   const usage = out.kind === 'object' ? out.usage : undefined
 
-  // invalid: erro de sistema puro → NADA persiste (ADR-0006).
-  if (result.outcome === 'invalid') return { kind: 'invalid' }
+  // invalid: erro de sistema puro → NADA persiste (ADR-0006). ADR-0055: a reserva fica COBRADA (a chamada foi
+  // paga), salvo a falha provadamente não paga do provedor, que a devolve.
+  if (result.outcome === 'invalid') {
+    if (out.kind === 'parse_failed' && out.cause === 'provider') await releaseQuotaHold(db, holdId)
+    return { kind: 'invalid' }
+  }
 
   // origin HERDADO da predecessora (PersistOrigin ai_*; o gate garantiu ai_*). O modo segue o da
   // sessão predecessora (irrelevante no caminho existingSessionId — não cria 2ª sessão).

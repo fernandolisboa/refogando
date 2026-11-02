@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Nota (ADR-0055, 2026-11-02):** geração de receita e de imagem passaram a reservar o slot antes da chamada paga também, mas com outro desenho (reserva em `quota_hold` consumida pelo persist e devolvida quando o provedor provadamente não cobrou). A Sugestão de cardápio fica como está: o ledger reservado nunca devolve o slot.
+
 > **Revisado por ADR-0046 (2026-10-16):** o default da tarefa `menu` passou a `claude-sonnet-5-5`; `effort` vai para Opus, Sonnet e Haiku (menos o Haiku 4.5 legado). A versão troca sozinha dentro da família após chamada de teste.
 >
 > **Revisado por #595 (2026-10-22):** o ledger (e o `extraction_event`) passa a entrar no export LGPD (`mealPlanSuggestionEvents`, `extractionEvents`) — registro de uso do próprio titular, sem conteúdo; decisão do parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md` §4, achado 1: exportação completa). A metade sobre a eliminação (dec.7) é de #473 (ADR-0050).

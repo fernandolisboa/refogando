@@ -243,6 +243,33 @@ function logSeamParseFailed(
 }
 
 /**
+ * O erro prova que a chamada NÃO foi cobrada (ADR-0055, regra estrita)? Só dois casos: (1) o provedor respondeu
+ * um erro HTTP (`APIError` com `status` numérico — 4xx/5xx/529, já depois das novas tentativas do SDK), ou (2) a
+ * conexão falhou antes de qualquer resposta (`APIConnectionError` que NÃO é `APIConnectionTimeoutError`: no
+ * timeout o pedido pode ter sido processado). Fora disso fica cobrado: abort do cliente ou do prazo de 50 s
+ * (`APIUserAbortError`, `status` undefined), erro de parse/zod dentro do `messages.parse` (a resposta veio),
+ * saída truncada e o erro SSE no meio de um stream (`APIError` com `status` undefined). Quem chama ainda exige
+ * que nenhuma chamada anterior do mesmo método tenha voltado (o reparo pressupõe uma 1ª chamada paga).
+ */
+export function isUnpaidProviderError(err: unknown): boolean {
+  if (err instanceof Anthropic.APIConnectionError) return !(err instanceof Anthropic.APIConnectionTimeoutError)
+  return err instanceof Anthropic.APIError && typeof err.status === 'number'
+}
+
+/**
+ * O stream da conversa falhou ANTES de qualquer evento, com um erro que prova que a chamada não foi cobrada
+ * (`isUnpaidProviderError`). Lançado por `streamConversation` no lugar do erro do SDK (que vai em `cause`):
+ * é o ÚNICO caso em que a rota da conversa devolve a reserva de cota (ADR-0055). Depois do 1º evento (o
+ * thinking é pago antes de qualquer texto), todo erro sobe como veio e a reserva fica cobrada.
+ */
+export class ClaudeProviderUnavailableError extends Error {
+  constructor(options?: { cause?: unknown }) {
+    super('provedor do Claude indisponível antes do stream', options)
+    this.name = 'ClaudeProviderUnavailableError'
+  }
+}
+
+/**
  * Loga quantos valores da saída não casaram o vocabulário e caíram no fallback (campo null, restrição
  * descartada, `kind` inferido, parte da quantidade perdida), e em quais campos. A geração segue.
  * NUNCA o valor: ele é conteúdo de receita gerado pela IA (e pode ecoar texto do Usuário via prompt),
@@ -273,6 +300,9 @@ export class RealClaudeClient implements ClaudeClient {
     const client = new Anthropic()
     // Valores fora do vocabulário que o parse normalizou para o fallback (log, não falha).
     const descartes: CampoDescartado[] = []
+    // ADR-0055: quantas chamadas `messages.parse` já VOLTARAM (pagas). Com alguma, um erro depois não prova
+    // que nada foi cobrado (o reparo vem depois de uma 1ª resposta), então o `parse_failed` vai sem `cause`.
+    let returned = 0
 
     try {
       // #318: schema constrito ao conjunto ATIVO de cozinhas (data-driven, ADR-0025). Vazio ⇒
@@ -294,6 +324,7 @@ export class RealClaudeClient implements ClaudeClient {
       // Um prazo só p/ chamada + reparo (`generationSignal`).
       const signal = generationSignal(input.signal)
       let message = await client.messages.parse(params, { signal })
+      returned++
 
       // Branch por stop_reason (NÃO stop_details — esse é só metadado de categoria).
       if (message.stop_reason === 'refusal') return { kind: 'refusal' }
@@ -307,6 +338,7 @@ export class RealClaudeClient implements ClaudeClient {
       if (message.parsed_output === null) {
         descartes.length = 0 // só os da tentativa que vale
         message = await client.messages.parse(params, { signal })
+        returned++
         if (message.stop_reason === 'refusal') return { kind: 'refusal' }
         if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
         if (message.parsed_output === null) {
@@ -333,7 +365,8 @@ export class RealClaudeClient implements ClaudeClient {
       // modelo recusado) fica invisível em produção.
       logSeamError('generateRecipe', err, input.signal)
       logDescartes('generateRecipe', descartes)
-      return { kind: 'parse_failed' }
+      // ADR-0055: só o erro que prova "não cobrado" (e nenhuma chamada paga antes) devolve a reserva de cota.
+      return returned === 0 && isUnpaidProviderError(err) ? { kind: 'parse_failed', cause: 'provider' } : { kind: 'parse_failed' }
     }
   }
 
@@ -342,6 +375,8 @@ export class RealClaudeClient implements ClaudeClient {
     // schema-LISTA (`buildRecipeGenListSchema`) e com o teto 2×. Caminho paralelo — não toca o single.
     const client = new Anthropic()
     const descartes: CampoDescartado[] = []
+    // ADR-0055: mesma regra do single — erro depois de uma chamada que voltou não devolve a reserva.
+    let returned = 0
 
     try {
       const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
@@ -357,6 +392,7 @@ export class RealClaudeClient implements ClaudeClient {
 
       const signal = generationSignal(input.signal)
       let message = await client.messages.parse(params, { signal })
+      returned++
       if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
       // Saída structured TRUNCADA lança dentro de messages.parse (→ catch, parse_failed do lote); este
       // branch só trata o sinal max_tokens SEM truncamento do structured.
@@ -365,6 +401,7 @@ export class RealClaudeClient implements ClaudeClient {
       if (message.parsed_output === null) {
         descartes.length = 0 // só os da tentativa que vale
         message = await client.messages.parse(params, { signal })
+        returned++
         if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
         if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
         if (message.parsed_output === null) {
@@ -398,7 +435,9 @@ export class RealClaudeClient implements ClaudeClient {
       // Truncamento no meio da 2ª receita OU qualquer erro de rede/SDK/validação → parse_failed do lote.
       logSeamError('generateRecipeVariants', err, input.signal)
       logDescartes('generateRecipeVariants', descartes)
-      return [{ kind: 'parse_failed' }]
+      return returned === 0 && isUnpaidProviderError(err)
+        ? [{ kind: 'parse_failed', cause: 'provider' }]
+        : [{ kind: 'parse_failed' }]
     }
   }
 
@@ -561,10 +600,22 @@ export class RealClaudeClient implements ClaudeClient {
 
     // Rende SÓ os deltas de TEXTO (content_block_delta / text_delta). A conclusão do
     // iterável é o sinal terminal — sem sentinela.
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        yield event.delta.text
+    // ADR-0055: um erro ANTES do 1º evento do SDK que prova "não cobrado" (HTTP de erro, conexão recusada) sobe
+    // como `ClaudeProviderUnavailableError` — a rota devolve a reserva de cota só nesse caso. Depois do 1º
+    // evento (mesmo só thinking, que já é pago), o erro sobe como veio.
+    let sawEvent = false
+    try {
+      for await (const event of stream) {
+        sawEvent = true
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          yield event.delta.text
+        }
       }
+    } catch (err) {
+      if (!sawEvent && !input.signal?.aborted && isUnpaidProviderError(err)) {
+        throw new ClaudeProviderUnavailableError({ cause: err })
+      }
+      throw err
     }
   }
 }
@@ -592,6 +643,19 @@ export class FakeClaudeClient implements ClaudeClient {
   lastSceneInput: GenerationInput | null = null
   /** Quantas vezes `directImageScene` foi chamado (provar que o diretor rodou ou não). */
   sceneCalls = 0
+  /**
+   * ADR-0055: quantas chamadas PAGAS chegaram ao seam — `generateRecipe`, `generateRecipeVariants` e
+   * `streamConversation` (conta ao abrir o stream). Os testes de concorrência provam com elas que os pedidos
+   * acima do teto param na reserva, ANTES do provedor.
+   */
+  generateCalls = 0
+  variantsCalls = 0
+  streamCalls = 0
+  /**
+   * ADR-0055: erro que `streamConversation` lança ANTES do 1º token (simula o provedor fora do ar, com
+   * `ClaudeProviderUnavailableError`, ou uma falha cobrada, com qualquer outro erro). Ausente ⇒ rende os tokens.
+   */
+  streamError?: unknown
 
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
@@ -608,6 +672,7 @@ export class FakeClaudeClient implements ClaudeClient {
   }
 
   async generateRecipe(): Promise<GenerationOutput> {
+    this.generateCalls++
     if (!this.canned) {
       throw new Error('FakeClaudeClient: nenhum GenerationOutput enlatado (passe-o no construtor).')
     }
@@ -615,6 +680,7 @@ export class FakeClaudeClient implements ClaudeClient {
   }
 
   async generateRecipeVariants(): Promise<GenerationOutput[]> {
+    this.variantsCalls++
     if (!this.cannedVariants) {
       throw new Error(
         'FakeClaudeClient: nenhum lote de variações enlatado (passe-o como 5º arg do construtor).',
@@ -649,6 +715,8 @@ export class FakeClaudeClient implements ClaudeClient {
     // Rende cada token enlatado e RETORNA (conclusão = terminal, sem sentinela). Entre
     // os yields, checa o `signal?.aborted` para ser abortável (o teste de disconnect aborta
     // após o 1º token e espera que o loop pare aqui, pulando a destilação).
+    this.streamCalls++
+    if (this.streamError !== undefined) throw this.streamError
     for (const token of this.cannedTokens ?? []) {
       if (input?.signal?.aborted) return
       yield token

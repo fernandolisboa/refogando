@@ -54,6 +54,19 @@ export interface ImageGenerator {
   generateDishImage(input: GenerateImageInput): Promise<GeneratedImage>
 }
 
+/**
+ * O Gemini provadamente NÃO cobrou (ADR-0055): respondeu erro HTTP (`!res.ok`) ou o `fetch` falhou na rede
+ * antes de qualquer resposta. É o ÚNICO erro do gerador que devolve a reserva de cota de imagem; qualquer
+ * outra falha (resposta 200 sem bytes, ex. bloqueio de segurança; corpo ilegível) vem depois de uma chamada
+ * paga e deixa a reserva cobrada. A mensagem é SERVER-ONLY (a rota responde um 503 genérico).
+ */
+export class ImageProviderUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'ImageProviderUnavailableError'
+  }
+}
+
 
 /** Forma mínima da resposta do `:generateContent` que consumimos (parts com inlineData base64 +
  * usageMetadata de tokens). TODOS os campos opcionais — o caminho Real mapeia defensivamente. */
@@ -115,16 +128,23 @@ export class RealGeminiImageGenerator implements ImageGenerator {
         },
       })
     }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ parts }] }),
-    })
+    // ADR-0055: falha de REDE do `fetch` (sem resposta) e erro HTTP viram `ImageProviderUnavailableError` —
+    // o Gemini não cobrou, e a reserva de cota volta. Daqui pra baixo (resposta 200), toda falha fica cobrada.
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({ contents: [{ parts }] }),
+      })
+    } catch (err) {
+      throw new ImageProviderUnavailableError('geração de imagem falhou: rede', { cause: err })
+    }
     if (!res.ok) {
       // Inclui o corpo do erro do Gemini na mensagem (SERVER-ONLY — nunca volta ao cliente; a rota
       // mapeia para um 503 genérico). Diagnóstico do caminho ao vivo (não exercitado por teste).
       const detail = await res.text().catch(() => '')
-      throw new Error(`geração de imagem falhou: HTTP ${res.status} ${detail.slice(0, 500)}`)
+      throw new ImageProviderUnavailableError(`geração de imagem falhou: HTTP ${res.status} ${detail.slice(0, 500)}`)
     }
     const body = (await res.json()) as GeminiResponse
     const part = body.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)
@@ -179,11 +199,15 @@ export class FakeImageGenerator implements ImageGenerator {
 }
 
 /** Dublê que SEMPRE falha — exercita a degradação (rota deve responder erro) E prova, em casos de
- * autorização negada (anon/não-dono), que o seam NUNCA foi tocado (calls fica em 0). */
+ * autorização negada (anon/não-dono), que o seam NUNCA foi tocado (calls fica em 0).
+ * ADR-0055: `failure` escolhe o tipo da falha — `'unavailable'` (default: o Gemini fora do ar, NÃO cobrado ⇒ a
+ * reserva de cota volta) ou `'paid'` (falha depois de uma resposta 200, ex. sem bytes ⇒ a reserva fica cobrada). */
 export class ThrowingImageGenerator implements ImageGenerator {
   public calls = 0
+  constructor(private readonly failure: 'unavailable' | 'paid' = 'unavailable') {}
   async generateDishImage(): Promise<GeneratedImage> {
     this.calls++
-    throw new Error('geração de imagem indisponível (dublê de degradação)')
+    if (this.failure === 'paid') throw new Error('resposta da geração de imagem sem bytes (dublê de falha paga)')
+    throw new ImageProviderUnavailableError('geração de imagem indisponível (dublê de degradação)')
   }
 }

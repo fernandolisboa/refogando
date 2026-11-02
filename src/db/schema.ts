@@ -567,6 +567,42 @@ export const extractionEvent = pgTable(
   ],
 )
 
+/**
+ * RESERVA de cota (#640/#641, ADR-0055): um slot de geração de RECEITA (`recipe_gen`) ou de IMAGEM
+ * (`image_gen`) tomado ANTES da chamada paga, sob a MESMA advisory lock do gate do persist. Sem ela, M
+ * requisições paralelas com a cota em N-1 passavam todas no pré-check (leitura) e TODAS pagavam o
+ * provedor; só o persist barrava (`reserveQuotaHold` em `src/server/quota/atomic.ts`).
+ *
+ * A linha CONTA na cota do `kind` (com peso `slots`: 2 no "gerar 2" do #423) enquanto `expires_at > agora`, e
+ * nasce JÁ COBRADA: `expires_at = created_at + janela (24 h)`, o mesmo instante em que um evento de geração
+ * criado agora sairia da janela. Duas saídas só: CONSUMIR (o persist apaga a linha na MESMA tx em que grava a
+ * `generation`/`image_generation`, que passa a contar no lugar dela) e DEVOLVER (DELETE quando a falha do
+ * provedor é provadamente NÃO paga: HTTP de erro ou conexão recusada antes de qualquer resposta). Todo o resto
+ * depois da chamada (saída inválida, abort do cliente, função morta pelo timeout) fica cobrado até vencer —
+ * sem linha de `generation` (ADR-0006 intacto). Sem conteúdo: só o usuário, o tipo e as datas.
+ * ON DELETE cascade: apagar o usuário apaga as reservas. RETENÇÃO (ADR-0050): a vencida (`expires_at <= agora`)
+ * é apagada pelo cron diário de retenção (`quotaHolds`); vencida não conta, então a limpeza é só higiene. Sem
+ * índice próprio para esse corte global: a tabela só guarda as reservas das últimas 24 h.
+ */
+export const quotaHold = pgTable(
+  'quota_hold',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    slots: smallint('slots').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index('quota_hold_user_kind_expires_idx').on(t.userId, t.kind, t.expiresAt),
+    check('quota_hold_kind_chk', sql`${t.kind} IN ('recipe_gen', 'image_gen')`),
+    check('quota_hold_slots_chk', sql`${t.slots} BETWEEN 1 AND 2`),
+  ],
+)
+
 export const recipeTranslation = pgTable(
   'recipe_translation',
   {

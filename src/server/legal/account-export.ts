@@ -76,6 +76,8 @@ import { exportablePromptStamp, type JsonObjectSection } from '@/domain/account-
  *    terceiro, mesma regra da lista de seguidores).
  *  - Colunas internas da imagem (`reviewRequired`, `derivativesAttemptedAt`) e a `lineageId` (chave interna).
  *  - `rate_limit` (chaveado por IP, não pelo titular) e `dsar_audit_event` (o registro de conformidade).
+ *  - `quota_hold` (ADR-0055): reserva de cota de controle, sem conteúdo, que vive no máximo 24 h e só repete o
+ *    que os registros de uso exportados já mostram (cada reserva consumida vira uma geração do export).
  *
  * Portável/legível: JSON plano e versionado (`format`), pronto para o titular ler ou reimportar. A versão
  * segue `v1`: as seções novas só ACRESCENTAM chaves (nada renomeado nem com tipo trocado), como nos PRs

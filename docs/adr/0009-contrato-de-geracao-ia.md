@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Nota (ADR-0055, 2026-11-02):** o **Inválido** continua sem `generation` (nenhum episódio de criação nasce de erro de sistema, ADR-0006), mas agora **consome a cota**: o slot é reservado antes da chamada e fica cobrado por 24 h. Só o `parse_failed` com `cause: 'provider'` (erro HTTP ou conexão recusada, sem nenhuma resposta antes) devolve o slot.
+
 > **Nota (ADR-0046, 2026-10-16):** as famílias oferecidas passaram a Opus, Sonnet e Haiku (Fable saiu), e o modelo em uso troca sozinho para a versão nova da família depois de uma chamada de teste aceita.
 
 > **Nota (ADR-0033, 2026-09-24):** o modelo deixou de ser uma allowlist de duas opções em código. O default passa a `claude-opus-5-5` e o admin escolhe entre o mais novo de Opus, Sonnet e Fable, listados pela Models API da Anthropic.
