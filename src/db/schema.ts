@@ -686,8 +686,9 @@ export const recipeTranslation = pgTable(
  *    curta (`claimTranslationFlight`), e a chamada ao modelo roda FORA da tx. Enquanto `lease_until > now()`, os
  *    outros POSTs do par não chamam o modelo. Função morta pela Vercel não solta o lease: ele vence sozinho.
  *  - CACHE NEGATIVO: a falha grava `failed_at`, `retry_at` (24 h para falha da linha, 10 min para infra) e
- *    `fail_key` (fonte + versão do prompt, a mesma chave do circuit-breaker do #520). Até `retry_at`, e enquanto a
- *    chave for a mesma, nenhum POST chama o modelo.
+ *    `fail_key` (a chave do circuit-breaker do #520, fonte + versão do prompt, mais a cozinha e o modelo/thinking
+ *    da tradução: `translationFlightFailKey`). Até `retry_at`, e enquanto a chave for a mesma, nenhum POST chama o
+ *    modelo.
  * O sucesso apaga a linha (a tradução gravada passa a responder `exists`). ON DELETE cascade com a receita.
  */
 export const recipeTranslationAttempt = pgTable(
