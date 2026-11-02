@@ -286,6 +286,23 @@ describe('assertAccountMailInProduction (#645) — Production não sobe sem e-ma
     ).not.toThrow()
   })
 
+  it('Production com AUTH_MAIL_FROM vazio cai no DSAR_MAIL_FROM (o `||` do remetente) ⇒ segue', () => {
+    expect(() =>
+      assertAccountMailInProduction({ VERCEL_ENV: 'production', RESEND_API_KEY: KEY, AUTH_MAIL_FROM: '', DSAR_MAIL_FROM: FROM }),
+    ).not.toThrow()
+  })
+
+  // Sem isto, apagar a chamada em `src/lib/auth.ts` deixaria todos os testes verdes.
+  it('src/lib/auth.ts chama a trava no carregamento do módulo', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    vi.stubEnv('RESEND_API_KEY', '')
+    vi.stubEnv('AUTH_MAIL_FROM', '')
+    vi.stubEnv('DSAR_MAIL_FROM', '')
+    vi.resetModules()
+    await expect(import('@/lib/auth')).rejects.toThrow(/#645/)
+    vi.resetModules()
+  })
+
   it.each([['preview'], ['development'], [undefined]])('VERCEL_ENV=%s sem mailer ⇒ segue (gate desligado)', (vercelEnv) => {
     expect(() => assertAccountMailInProduction({ VERCEL_ENV: vercelEnv })).not.toThrow()
   })
