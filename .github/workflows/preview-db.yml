@@ -1,0 +1,188 @@
+# Banco do Preview SEM dados reais (#646, ADR-0059).
+#
+# POR QUÊ: a integração Vercel/Neon criava uma branch `preview/<git-branch>` por PR a partir do `main`, ou seja,
+# uma cópia integral dos dados pessoais de produção, servida pelo código ainda não revisado do PR. Desde o #646 o
+# Preview usa UMA branch fixa, `preview-sem-dados`, criada aqui como "schema only": a estrutura do `main` sem
+# nenhuma linha. Só copiamos o que não é dado pessoal e sem o qual o app não funciona:
+#   - `drizzle.__drizzle_migrations` (o histórico das migrações; sem ele o `db:migrate` do build tentaria recriar
+#     tudo desde a 0000);
+#   - `app_config` (a linha única de configuração do Console: modelos, tetos, textos) e
+#   - `vocabulary_term` só `status = 'active'` (cozinhas, categorias e afins; sem autor nem conta).
+#
+# O QUE FAZ (idempotente; rodar de novo não duplica nada):
+#   1. acha o `main` (branch default) e a `preview-sem-dados`; se ela não existe, cria (schema only, com compute);
+#   2. recusa seguir se a `preview-sem-dados` for o default, não for schema only (`init_source`), tiver o host de
+#      produção, tiver a MESMA senha do `main` (o Neon copia os papéis com a senha; a do Preview é trocada uma vez,
+#      só nessa branch) ou, quando ainda falta copiar algo, tiver qualquer linha nas tabelas de `public`;
+#   3. lê do `main` numa conexão SÓ LEITURA (`default_transaction_read_only=on`) e grava na preview só as tabelas
+#      acima, cada uma só se estiver vazia lá;
+#   4. lista as branches `preview/*` que ainda existem: são cópias com dados reais, para apagar no Console do Neon.
+#
+# NUNCA escreve no `main`. Nada de DROP, TRUNCATE ou reset em lugar nenhum.
+# Rodar de novo depois que alguém criou conta no Preview: as três cópias já estão feitas, então ele só confere as
+# travas e lista as `preview/*`; não recusa por causa das contas de teste.
+#
+# Depois: as URLs da `preview-sem-dados` (Connect no Neon) vão em DATABASE_URL e DATABASE_URL_UNPOOLED da Vercel,
+# só no ambiente Preview. Um PR com migração aplica a migração nessa branch no build do Preview (só uma migração em
+# voo por vez, convenção do repo). Se a branch divergir (PR com migração abandonado): apague-a no Console, rode
+# este workflow de novo e atualize as duas variáveis do Preview (o host muda).
+#
+# Requer no repo (já existem, usados por db-backup.yml): secret NEON_API_KEY e variable NEON_PROJECT_ID.
+name: Preview DB (branch sem dados reais)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: preview-db
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    env:
+      NEON_API: https://console.neon.tech/api/v2
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      PREVIEW_BRANCH: preview-sem-dados
+      DB_NAME: neondb
+      DB_ROLE: neondb_owner
+      # Endpoint de produção (CLAUDE.md, "Banco de dados — landmines"). A preview nunca pode ter este host.
+      PROD_HOST_PREFIX: ep-gentle-morning-
+    steps:
+      - name: Find or create the schema-only preview branch
+        id: branch
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $NEON_API_KEY" -H "Content-Type: application/json")
+          branches=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches")
+          main_id=$(jq -r '.branches[] | select(.default==true) | .id' <<<"$branches")
+          [ -n "$main_id" ] || { echo "branch default não encontrado"; exit 1; }
+          prev_id=$(jq -r --arg n "$PREVIEW_BRANCH" '.branches[] | select(.name==$n) | .id' <<<"$branches")
+          if [ -z "$prev_id" ]; then
+            echo "criando $PREVIEW_BRANCH (schema only) a partir de $main_id"
+            prev_id=$(curl -fsS -X POST "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches" \
+              -d "{\"branch\":{\"name\":\"$PREVIEW_BRANCH\",\"parent_id\":\"$main_id\",\"init_source\":\"schema-only\"},\"endpoints\":[{\"type\":\"read_write\"}]}" \
+              | jq -r '.branch.id')
+          else
+            echo "$PREVIEW_BRANCH já existe ($prev_id)"
+          fi
+          [ -n "$prev_id" ] && [ "$prev_id" != "null" ] || { echo "falha ao criar/achar a branch"; exit 1; }
+          [ "$prev_id" != "$main_id" ] || { echo "a preview é o main: recusado"; exit 1; }
+          # Espera a branch ficar pronta (a criação é assíncrona).
+          for _ in $(seq 1 30); do
+            info=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$prev_id")
+            state=$(jq -r '.branch.current_state' <<<"$info")
+            [ "$state" = "ready" ] && break
+            sleep 5
+          done
+          [ "$state" = "ready" ] || { echo "branch não ficou pronta (estado: $state)"; exit 1; }
+          [ "$(jq -r '.branch.default' <<<"$info")" = "false" ] || { echo "a preview é a branch default: recusado"; exit 1; }
+          # Schema only: `init_source=schema-only` quando a API devolve o campo; sem o campo, ao menos branch raiz (sem
+          # parent). Uma branch raiz com dados (ex. main_old_feudo_wipe_2026-09-18 renomeada) não passa da segunda
+          # trava: a contagem de linhas em toda tabela de `public` no passo seguinte.
+          parent=$(jq -r '.branch.parent_id // empty' <<<"$info")
+          init=$(jq -r '.branch.init_source // empty' <<<"$info")
+          if [ -n "$init" ]; then
+            [ "$init" = "schema-only" ] || { echo "a $PREVIEW_BRANCH não é schema only (init_source=$init): recusado"; exit 1; }
+          else
+            [ -z "$parent" ] || { echo "a $PREVIEW_BRANCH tem parent ($parent): recusado"; exit 1; }
+          fi
+          echo "main_id=$main_id" >> "$GITHUB_OUTPUT"
+          echo "prev_id=$prev_id" >> "$GITHUB_OUTPUT"
+
+      - name: Copy migration history and non-personal config
+        env:
+          MAIN_ID: ${{ steps.branch.outputs.main_id }}
+          PREV_ID: ${{ steps.branch.outputs.prev_id }}
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $NEON_API_KEY")
+          uri() {
+            local u
+            for _ in $(seq 1 12); do
+              u=$(curl -fsS "${auth[@]}" -G "$NEON_API/projects/$PROJECT_ID/connection_uri" \
+                --data-urlencode "branch_id=$1" --data-urlencode "database_name=$DB_NAME" \
+                --data-urlencode "role_name=$DB_ROLE" --data-urlencode "pooled=false" | jq -r '.uri // empty') && [ -n "$u" ] && { echo "$u"; return 0; }
+              sleep 5
+            done
+            return 1
+          }
+          pw() { python3 -c 'import sys,urllib.parse as u; print(u.unquote(u.urlsplit(sys.argv[1]).password or ""))' "$1"; }
+          main_uri=$(uri "$MAIN_ID") || { echo "sem URL do main"; exit 1; }
+          echo "::add-mask::$main_uri"
+          echo "::add-mask::$(pw "$main_uri")"
+          prev_uri=$(uri "$PREV_ID") || { echo "sem URL da preview (o papel $DB_ROLE existe nela?)"; exit 1; }
+          echo "::add-mask::$prev_uri"
+          echo "::add-mask::$(pw "$prev_uri")"
+
+          # O Neon copia os papéis para a branch nova COM a senha. Se a preview tem a senha do main, a DATABASE_URL do
+          # Preview daria acesso de dono à produção trocando só o host. Troca a senha de TODOS os papéis, só nesta
+          # branch (o endpoint é por branch), uma vez: na rodada seguinte as senhas já diferem e nada muda.
+          if [ "$(pw "$prev_uri")" = "$(pw "$main_uri")" ]; then
+            roles=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$PREV_ID/roles" | jq -r '.roles[].name')
+            for r in $roles; do
+              echo "trocando a senha de $r na $PREVIEW_BRANCH"
+              curl -fsS -X POST "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$PREV_ID/roles/$r/reset_password" \
+                | jq -r '.role.password // empty' | while read -r p; do [ -n "$p" ] && echo "::add-mask::$p"; done
+            done
+            sleep 5
+            prev_uri=$(uri "$PREV_ID") || { echo "sem URL da preview depois da troca"; exit 1; }
+            echo "::add-mask::$prev_uri"
+            echo "::add-mask::$(pw "$prev_uri")"
+          fi
+          [ "$(pw "$prev_uri")" != "$(pw "$main_uri")" ] || { echo "a preview ainda tem a senha do main: recusado"; exit 1; }
+          prev_host=$(python3 -c 'import sys,urllib.parse as u; print(u.urlsplit(sys.argv[1]).hostname or "")' "$prev_uri")
+          main_host=$(python3 -c 'import sys,urllib.parse as u; print(u.urlsplit(sys.argv[1]).hostname or "")' "$main_uri")
+          [[ -n "$prev_host" && "$prev_host" != "$PROD_HOST_PREFIX"* && "$prev_host" != "$main_host" ]] \
+            || { echo "o host da preview é o de produção: recusado"; exit 1; }
+
+          # Leitura do main SEMPRE em modo só leitura; escrita só na preview.
+          read_main() { PGOPTIONS='-c default_transaction_read_only=on' psql "$main_uri" -v ON_ERROR_STOP=1 -X -q "$@"; }
+          on_prev() { psql "$prev_uri" -v ON_ERROR_STOP=1 -X -q "$@"; }
+
+          # Falta copiar alguma coisa? Só então a preview tem de estar sem nenhuma linha fora das tabelas de
+          # configuração (uma branch com dados reais não recebe nada). Depois da primeira rodada, contas de teste
+          # criadas no Preview não travam a conferência.
+          pendentes=$(on_prev -tA -c "select (select count(*) = 0 from drizzle.__drizzle_migrations)::int
+            + (select count(*) = 0 from public.app_config)::int + (select count(*) = 0 from public.vocabulary_term)::int")
+          if [ "$pendentes" != "0" ]; then
+            linhas=$(on_prev -tA -c "select coalesce(sum((xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', schemaname, tablename), false, true, '')))[1]::text::bigint), 0)
+              from pg_tables where schemaname = 'public' and tablename not in ('app_config', 'vocabulary_term')")
+            [ "$linhas" = "0" ] || { echo "a preview já tem $linhas linhas em tabelas de public: recusado"; exit 1; }
+          fi
+
+          copy_if_empty() { # tabela  select-no-main
+            local table="$1" query="$2" n
+            n=$(on_prev -tA -c "select count(*) from $table")
+            if [ "$n" != "0" ]; then echo "$table: já tem $n linhas na preview, pulando"; return 0; fi
+            read_main -c "\\copy ($query) to stdout" | on_prev -c "\\copy $table from stdin"
+            echo "$table: $(on_prev -tA -c "select count(*) from $table") linhas copiadas"
+          }
+          copy_if_empty drizzle.__drizzle_migrations 'select id, hash, created_at from drizzle.__drizzle_migrations order by id'
+          on_prev -c "select setval(pg_get_serial_sequence('drizzle.__drizzle_migrations','id'), coalesce((select max(id) from drizzle.__drizzle_migrations), 1))" >/dev/null
+          copy_if_empty public.app_config 'select * from public.app_config'
+          copy_if_empty public.vocabulary_term "select * from public.vocabulary_term where status = 'active'"
+
+          {
+            echo "### Branch \`$PREVIEW_BRANCH\` pronta"
+            echo ""
+            echo "- id: \`$PREV_ID\`, host: \`$prev_host\`"
+            echo "- migrações: $(on_prev -tA -c 'select count(*) from drizzle.__drizzle_migrations')"
+            echo "- contas: $(on_prev -tA -c 'select count(*) from public.users')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: List leftover preview branches with real data
+        run: |
+          set -euo pipefail
+          left=$(curl -fsS -H "Authorization: Bearer $NEON_API_KEY" "$NEON_API/projects/$PROJECT_ID/branches" \
+            | jq -r '.branches[] | select(.name | startswith("preview/")) | "- `\(.name)` (\(.current_state), criada \(.created_at))"')
+          {
+            echo ""
+            echo "### Branches \`preview/*\` (cópias com dados reais, apagar no Console do Neon)"
+            echo ""
+            echo "${left:-nenhuma}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${left:-nenhuma}"
