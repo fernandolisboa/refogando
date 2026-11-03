@@ -57,6 +57,18 @@ describe('e2eFakesActive — matriz da guarda', () => {
     expect(() => e2eFakesActive({ ...HARNESS_ENV, DATABASE_URL: url })).toThrow(/DATABASE_URL/)
   })
 
+  it('APP_DATABASE_URL (que a app prefere em runtime, #644) ausente, vazia ou loopback ⇒ ok; fora de loopback ⇒ lança', () => {
+    expect(e2eFakesActive({ ...HARNESS_ENV, APP_DATABASE_URL: '' })).toBe(true)
+    expect(e2eFakesActive({ ...HARNESS_ENV, APP_DATABASE_URL: 'postgres://app_rw@localhost:5433/x' })).toBe(true)
+    expect(() =>
+      e2eFakesActive({
+        ...HARNESS_ENV,
+        APP_DATABASE_URL: 'postgres://app_rw:p@ep-gentle-morning-123-pooler.sa-east-1.aws.neon.tech/neondb',
+      }),
+    ).toThrow(/APP_DATABASE_URL/)
+    expect(() => e2eFakesActive({ ...HARNESS_ENV, APP_DATABASE_URL: 'não é url' })).toThrow(/APP_DATABASE_URL/)
+  })
+
   it.each(['BETTER_AUTH_URL', 'APP_URL'])('%s fora de http:// loopback ⇒ lança', (k) => {
     expect(() => e2eFakesActive({ ...HARNESS_ENV, [k]: undefined })).toThrow(k)
     expect(() => e2eFakesActive({ ...HARNESS_ENV, [k]: 'https://localhost:3100' })).toThrow(k)

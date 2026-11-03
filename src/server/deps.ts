@@ -1,4 +1,5 @@
 import { makeDb, makeSql, type Database } from '@/db/client'
+import { dbRoleFromUrl, resolveRuntimeDatabaseUrl } from '@/db/runtime-url'
 import { RealClaudeClient, type ClaudeClient } from '@/server/claude/client'
 import { RealModelCatalog, type ModelCatalog } from '@/server/claude/model-catalog'
 import { RealModelProbe, type ModelProbe } from '@/server/claude/model-probe'
@@ -74,11 +75,14 @@ export function getDb(): Database {
   if (!lazyDb) {
     // Lido preguiçosamente (não no topo do módulo): o harness só define a URL
     // depois, e globalSetup roda em outro processo.
-    const url = process.env.DATABASE_URL
-    if (!url) {
+    // APP_DATABASE_URL (papel app_rw, só DML) vence a DATABASE_URL do dono (#644, ADR-0058).
+    const runtime = resolveRuntimeDatabaseUrl()
+    if (!runtime) {
       throw new Error('DATABASE_URL não definido (nos testes, use setDb()).')
     }
-    lazyDb = makeDb(makeSql(url))
+    lazyDb = makeDb(makeSql(runtime.url))
+    // Uma linha por instância: é como se confere em produção que a app saiu do papel dono.
+    console.info(`[db] runtime conecta como papel=${dbRoleFromUrl(runtime.url)} origem=${runtime.source}`)
   }
   return lazyDb
 }

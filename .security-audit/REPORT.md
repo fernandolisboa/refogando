@@ -173,7 +173,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** limitador por IP persistido no banco (o padrão da tabela de rate limit da better-auth), cache dos
   vetores de busca, ou só embedding para quem está logado.
 
-#### M-5 — A app roda como dono do banco (sem menor privilégio) · ABERTO (#644)
+#### M-5 — A app roda como dono do banco (sem menor privilégio) · CORRIGIDO NO CÓDIGO, falta configurar (#644, ADR-0058)
 - **Severidade:** Medium, 5.9 `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N` · CWE-250 / CWE-269 · A05:2021
 - **Local:** `vercel.json:5` (o build roda `db:migrate`), `drizzle.config.ts:10`, `src/server/deps.ts:77`. A
   integração Neon/Vercel entrega `neondb_owner`.
@@ -182,6 +182,11 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:**
   - Criar um papel `app_rw`, só com DML em `public`, para o `DATABASE_URL` de runtime.
   - Usar o URL de dono só no passo de migrate, numa variável `MIGRATION_DATABASE_URL`.
+- **Status (2026-11-03):** a app lê `APP_DATABASE_URL` (papel `app_rw`) antes da `DATABASE_URL`; o dono fica só no
+  build, que migra pela `DATABASE_URL` da integração (o inverso do `MIGRATION_DATABASE_URL` sugerido, para não
+  mexer na variável que a integração Neon/Vercel gerencia). SQL do papel em `scripts/sql/papel-app-rw.sql`,
+  provado por `test/integration/runtime-role.test.ts`. Fecha quando a variável existir em Production e o log
+  `[db] runtime conecta como papel=app_rw` aparecer.
 
 #### M-6 — A exigência de confirmar email desliga sozinha se o mailer não estiver configurado · CORRIGIDO (#645, PR #650)
 - **Severidade:** Medium, 4.8 `CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:L` · CWE-636 (fail-open) · A07:2021
