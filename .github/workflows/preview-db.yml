@@ -80,13 +80,17 @@ jobs:
           done
           [ "$state" = "ready" ] || { echo "branch não ficou pronta (estado: $state)"; exit 1; }
           [ "$(jq -r '.branch.default' <<<"$info")" = "false" ] || { echo "a preview é a branch default: recusado"; exit 1; }
-          # Schema only: `init_source=schema-only` quando a API devolve o campo; sem o campo, ao menos branch raiz (sem
-          # parent). Uma branch raiz com dados (ex. main_old_feudo_wipe_2026-09-18 renomeada) não passa da segunda
-          # trava: a contagem de linhas em toda tabela de `public` no passo seguinte.
+          # Schema only: a criação pede `init_source=schema-only`, mas a branch criada volta com
+          # `init_source=parent-schema` (visto na 1ª execução, 2026-11-03); aceitamos os dois e recusamos qualquer outro
+          # (`parent-data` é cópia com dados). Sem o campo, ao menos branch raiz (sem parent). Limite conhecido: uma branch
+          # raiz com dados renomeada para `preview-sem-dados` (ex. main_old_feudo_wipe_2026-09-18) só é barrada pela
+          # contagem de linhas do passo seguinte se ainda faltar copiar alguma tabela; nunca renomeie uma branch para
+          # esse nome, deixe o workflow criá-la.
           parent=$(jq -r '.branch.parent_id // empty' <<<"$info")
           init=$(jq -r '.branch.init_source // empty' <<<"$info")
           if [ -n "$init" ]; then
-            [ "$init" = "schema-only" ] || { echo "a $PREVIEW_BRANCH não é schema only (init_source=$init): recusado"; exit 1; }
+            [ "$init" = "schema-only" ] || [ "$init" = "parent-schema" ] \
+              || { echo "a $PREVIEW_BRANCH não é schema only (init_source=$init): recusado"; exit 1; }
           else
             [ -z "$parent" ] || { echo "a $PREVIEW_BRANCH tem parent ($parent): recusado"; exit 1; }
           fi
