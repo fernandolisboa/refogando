@@ -28,8 +28,12 @@ Verificado pela API da Vercel em 2026-11-02 e 2026-11-03:
      - `vocabulary_term` com `status = 'active'`.
    - Travas:
      - lê o `main` só com `default_transaction_read_only=on`;
-     - recusa se a preview for a default, se for filha comum (não schema only) ou se tiver o host de produção;
-     - recusa se a preview tiver qualquer linha em `users` ou `recipe`;
+     - recusa se a preview for a default, se não for schema only (`init_source`) ou se tiver o host de produção;
+     - **troca a senha de todos os papéis na preview** (só nessa branch) quando ela tem a mesma senha do `main`. O
+       Neon copia os papéis para a branch nova com a senha, e sem a troca a `DATABASE_URL` do Preview daria acesso
+       de dono à produção trocando só o host. Depois recusa se as senhas ainda forem iguais;
+     - enquanto falta copiar algo, recusa se a preview tiver qualquer linha nas tabelas de `public` (fora as duas de
+       configuração). Numa rodada seguinte, com as cópias feitas, as contas de teste do Preview não travam;
      - copia cada tabela só se ela estiver vazia na preview;
      - nada de DROP, TRUNCATE ou reset.
    - Na Vercel, a conexão do store Neon fica só em Production, sem a ação de branch no Preview. O Preview recebe

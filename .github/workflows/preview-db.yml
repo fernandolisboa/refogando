@@ -11,13 +11,16 @@
 #
 # O QUE FAZ (idempotente; rodar de novo não duplica nada):
 #   1. acha o `main` (branch default) e a `preview-sem-dados`; se ela não existe, cria (schema only, com compute);
-#   2. recusa seguir se a `preview-sem-dados` for o default, tiver parent (não é schema only), tiver o host de
-#      produção ou já tiver contas (`users`) ou receitas (`recipe`);
+#   2. recusa seguir se a `preview-sem-dados` for o default, não for schema only (`init_source`), tiver o host de
+#      produção, tiver a MESMA senha do `main` (o Neon copia os papéis com a senha; a do Preview é trocada uma vez,
+#      só nessa branch) ou, quando ainda falta copiar algo, tiver qualquer linha nas tabelas de `public`;
 #   3. lê do `main` numa conexão SÓ LEITURA (`default_transaction_read_only=on`) e grava na preview só as tabelas
 #      acima, cada uma só se estiver vazia lá;
 #   4. lista as branches `preview/*` que ainda existem: são cópias com dados reais, para apagar no Console do Neon.
 #
 # NUNCA escreve no `main`. Nada de DROP, TRUNCATE ou reset em lugar nenhum.
+# Rodar de novo depois que alguém criou conta no Preview: as três cópias já estão feitas, então ele só confere as
+# travas e lista as `preview/*`; não recusa por causa das contas de teste.
 #
 # Depois: as URLs da `preview-sem-dados` (Connect no Neon) vão em DATABASE_URL e DATABASE_URL_UNPOOLED da Vercel,
 # só no ambiente Preview. Um PR com migração aplica a migração nessa branch no build do Preview (só uma migração em
@@ -77,12 +80,16 @@ jobs:
           done
           [ "$state" = "ready" ] || { echo "branch não ficou pronta (estado: $state)"; exit 1; }
           [ "$(jq -r '.branch.default' <<<"$info")" = "false" ] || { echo "a preview é a branch default: recusado"; exit 1; }
-          # Schema only = branch raiz (sem parent) ou marcada `init_source=schema-only`. Uma branch filha comum tem os
-          # dados do pai. A contagem de contas/receitas no passo seguinte é a segunda trava.
+          # Schema only: `init_source=schema-only` quando a API devolve o campo; sem o campo, ao menos branch raiz (sem
+          # parent). Uma branch raiz com dados (ex. main_old_feudo_wipe_2026-09-18 renomeada) não passa da segunda
+          # trava: a contagem de linhas em toda tabela de `public` no passo seguinte.
           parent=$(jq -r '.branch.parent_id // empty' <<<"$info")
           init=$(jq -r '.branch.init_source // empty' <<<"$info")
-          [ -z "$parent" ] || [ "$init" = "schema-only" ] \
-            || { echo "a $PREVIEW_BRANCH tem parent ($parent) e não é schema only: recusado"; exit 1; }
+          if [ -n "$init" ]; then
+            [ "$init" = "schema-only" ] || { echo "a $PREVIEW_BRANCH não é schema only (init_source=$init): recusado"; exit 1; }
+          else
+            [ -z "$parent" ] || { echo "a $PREVIEW_BRANCH tem parent ($parent): recusado"; exit 1; }
+          fi
           echo "main_id=$main_id" >> "$GITHUB_OUTPUT"
           echo "prev_id=$prev_id" >> "$GITHUB_OUTPUT"
 
@@ -103,10 +110,30 @@ jobs:
             done
             return 1
           }
+          pw() { python3 -c 'import sys,urllib.parse as u; print(u.unquote(u.urlsplit(sys.argv[1]).password or ""))' "$1"; }
           main_uri=$(uri "$MAIN_ID") || { echo "sem URL do main"; exit 1; }
-          prev_uri=$(uri "$PREV_ID") || { echo "sem URL da preview (o papel $DB_ROLE existe nela?)"; exit 1; }
           echo "::add-mask::$main_uri"
+          echo "::add-mask::$(pw "$main_uri")"
+          prev_uri=$(uri "$PREV_ID") || { echo "sem URL da preview (o papel $DB_ROLE existe nela?)"; exit 1; }
           echo "::add-mask::$prev_uri"
+          echo "::add-mask::$(pw "$prev_uri")"
+
+          # O Neon copia os papéis para a branch nova COM a senha. Se a preview tem a senha do main, a DATABASE_URL do
+          # Preview daria acesso de dono à produção trocando só o host. Troca a senha de TODOS os papéis, só nesta
+          # branch (o endpoint é por branch), uma vez: na rodada seguinte as senhas já diferem e nada muda.
+          if [ "$(pw "$prev_uri")" = "$(pw "$main_uri")" ]; then
+            roles=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$PREV_ID/roles" | jq -r '.roles[].name')
+            for r in $roles; do
+              echo "trocando a senha de $r na $PREVIEW_BRANCH"
+              curl -fsS -X POST "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$PREV_ID/roles/$r/reset_password" \
+                | jq -r '.role.password // empty' | while read -r p; do [ -n "$p" ] && echo "::add-mask::$p"; done
+            done
+            sleep 5
+            prev_uri=$(uri "$PREV_ID") || { echo "sem URL da preview depois da troca"; exit 1; }
+            echo "::add-mask::$prev_uri"
+            echo "::add-mask::$(pw "$prev_uri")"
+          fi
+          [ "$(pw "$prev_uri")" != "$(pw "$main_uri")" ] || { echo "a preview ainda tem a senha do main: recusado"; exit 1; }
           prev_host=$(python3 -c 'import sys,urllib.parse as u; print(u.urlsplit(sys.argv[1]).hostname or "")' "$prev_uri")
           main_host=$(python3 -c 'import sys,urllib.parse as u; print(u.urlsplit(sys.argv[1]).hostname or "")' "$main_uri")
           [[ -n "$prev_host" && "$prev_host" != "$PROD_HOST_PREFIX"* && "$prev_host" != "$main_host" ]] \
@@ -116,9 +143,16 @@ jobs:
           read_main() { PGOPTIONS='-c default_transaction_read_only=on' psql "$main_uri" -v ON_ERROR_STOP=1 -X -q "$@"; }
           on_prev() { psql "$prev_uri" -v ON_ERROR_STOP=1 -X -q "$@"; }
 
-          # A preview não pode ter dado de ninguém.
-          pessoas=$(on_prev -tA -c "select (select count(*) from public.users) + (select count(*) from public.recipe)")
-          [ "$pessoas" = "0" ] || { echo "a preview já tem contas ou receitas ($pessoas linhas): recusado"; exit 1; }
+          # Falta copiar alguma coisa? Só então a preview tem de estar sem nenhuma linha fora das tabelas de
+          # configuração (uma branch com dados reais não recebe nada). Depois da primeira rodada, contas de teste
+          # criadas no Preview não travam a conferência.
+          pendentes=$(on_prev -tA -c "select (select count(*) = 0 from drizzle.__drizzle_migrations)::int
+            + (select count(*) = 0 from public.app_config)::int + (select count(*) = 0 from public.vocabulary_term)::int")
+          if [ "$pendentes" != "0" ]; then
+            linhas=$(on_prev -tA -c "select coalesce(sum((xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', schemaname, tablename), false, true, '')))[1]::text::bigint), 0)
+              from pg_tables where schemaname = 'public' and tablename not in ('app_config', 'vocabulary_term')")
+            [ "$linhas" = "0" ] || { echo "a preview já tem $linhas linhas em tabelas de public: recusado"; exit 1; }
+          fi
 
           copy_if_empty() { # tabela  select-no-main
             local table="$1" query="$2" n
@@ -127,7 +161,7 @@ jobs:
             read_main -c "\\copy ($query) to stdout" | on_prev -c "\\copy $table from stdin"
             echo "$table: $(on_prev -tA -c "select count(*) from $table") linhas copiadas"
           }
-          copy_if_empty drizzle.__drizzle_migrations 'select * from drizzle.__drizzle_migrations order by id'
+          copy_if_empty drizzle.__drizzle_migrations 'select id, hash, created_at from drizzle.__drizzle_migrations order by id'
           on_prev -c "select setval(pg_get_serial_sequence('drizzle.__drizzle_migrations','id'), coalesce((select max(id) from drizzle.__drizzle_migrations), 1))" >/dev/null
           copy_if_empty public.app_config 'select * from public.app_config'
           copy_if_empty public.vocabulary_term "select * from public.vocabulary_term where status = 'active'"

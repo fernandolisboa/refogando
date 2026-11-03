@@ -52,9 +52,12 @@
 - Se um PR com migração for abandonado, a preview diverge. Apagar a branch, rodar o workflow e trocar as duas
   variáveis do Preview, porque o host muda.
 - O plano free tem 3 branches raiz, e a preview é a terceira.
-- O `parent_id` de uma branch schema only pode vir preenchido na API. O workflow aceita isso quando
-  `init_source=schema-only`, e a contagem de contas e receitas é a segunda trava.
-- Um `GRANT` ao `app_rw` (ADR-0058) não importa aqui: o `app_rw` só existe em Production.
+- O `parent_id` de uma branch schema only pode vir preenchido na API. Quando a API devolve `init_source`, o workflow
+  exige `schema-only`; sem o campo, exige branch raiz. A contagem de linhas em todo `public` é a segunda trava.
+- O Neon copia os papéis para a branch nova com a mesma senha, inclusive o `neondb_owner` e o `app_rw` (ADR-0058),
+  se já existirem. O workflow troca a senha de todos os papéis na `preview-sem-dados` na primeira rodada e recusa
+  seguir se a senha do Preview for igual à do `main`. Se alguém recriar a branch à mão pelo Console, rode o workflow
+  antes de copiar a URL para a Vercel.
 
 ## 6. Gotchas de ambiente
 
