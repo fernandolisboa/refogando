@@ -3,7 +3,7 @@
 Status: aceito (2026-11-03)
 
 Issue #644 (achado M-5 da auditoria SAST, `.security-audit/REPORT.md`). Relaciona: incidente de 2026-09-09
-(`docs/incidents/`), ADR-0054 (guarda do banco de produção no harness de teste).
+(`docs/incidents/`), achado H-3 do REPORT (guarda do banco de produção no harness de teste, `test/helpers/production-db-guard.ts`).
 
 ## Contexto
 
@@ -29,13 +29,17 @@ Issue #644 (achado M-5 da auditoria SAST, `.security-audit/REPORT.md`). Relacion
    sequências. Também tem `ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner`, para que tabela ou sequência criada por
    migração futura já nasça acessível. Sem acesso ao schema `drizzle` (histórico das migrações).
 3. **Prova:** `test/integration/runtime-role.test.ts` roda esse mesmo arquivo, trocando os nomes do papel, do dono e
-   do banco pelos do banco descartável. Prova cinco coisas:
+   do banco pelos do banco descartável. O dono do teste é um papel sem superusuário, como o `neondb_owner`. O teste
+   prova seis coisas:
    - o papel não é superusuário e não é membro de nenhum outro papel;
    - tem os quatro privilégios em toda tabela e sequência de `public`;
+   - um caminho real da app funciona com o papel: semear Receita, com as colunas geradas de FTS, e `GET /api/search`;
    - o upsert do limitador e o advisory lock funcionam;
    - uma tabela criada depois pelo dono já nasce acessível;
    - `DROP TABLE`, `TRUNCATE`, `ALTER TABLE`, `CREATE TABLE` e `DROP SCHEMA` dão 42501.
-4. **Conferência em produção:** na primeira conexão de cada instância, uma linha
+4. **Conferência em produção:** `scripts/sql/conferir-papel-app-rw.sql`, rodado no SQL Editor depois do SQL do
+   papel, tem que voltar zero linhas. Isso importa porque `GRANT … ON ALL TABLES` sobre tabela de outro dono só dá
+   WARNING. Depois, na primeira conexão de cada instância, sai uma linha
    `[db] runtime conecta como papel=<papel> origem=<variável>` (`docs/observabilidade.md`). O nome do papel vem do
    usuário da URL (`dbRoleFromUrl`), sem senha nem host.
 5. **Guarda do E2E:** `e2eFakesActive` também recusa `APP_DATABASE_URL` fora de loopback, já que a app passaria a
@@ -46,8 +50,10 @@ Issue #644 (achado M-5 da auditoria SAST, `.security-audit/REPORT.md`). Relacion
 - **Tabela nova numa migração:** não precisa de `GRANT`, porque o default privilege cobre. A exceção é uma migração
   rodada por outro papel que não o `neondb_owner`: ela precisa de `GRANT` explícito, e o teste não pega isso.
 - **Schema novo além de `public`:** precisa de `GRANT USAGE` e dos privilégios para o `app_rw` na mesma migração.
-- **Feature que precise de DDL em runtime** (tabela temporária, `REFRESH MATERIALIZED VIEW`, `TRUNCATE`): o
-  `app_rw` não consegue. Ou a feature muda de desenho, ou este ADR é revisto.
+- **Feature que precise de DDL em runtime** (`REFRESH MATERIALIZED VIEW`, `TRUNCATE`, tabela ou índice em `public`):
+  o `app_rw` não consegue. Ou a feature muda de desenho, ou este ADR é revisto. Tabela temporária ele consegue,
+  porque `PUBLIC` tem `TEMPORARY` no banco por padrão. Ela some com a sessão e não toca dado de ninguém, então
+  ficou como está.
 - **Senha errada na `APP_DATABASE_URL`:** derruba toda request de banco. Rollback: Instant Rollback para o deploy
   anterior na Vercel (ele guarda o env da época) ou apagar a variável e fazer redeploy.
 - **O papel herda nas branches:** branches novas do Neon criadas de `main` copiam os papéis, então o `app_rw` existe

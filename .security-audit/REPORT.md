@@ -182,7 +182,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:**
   - Criar um papel `app_rw`, só com DML em `public`, para o `DATABASE_URL` de runtime.
   - Usar o URL de dono só no passo de migrate, numa variável `MIGRATION_DATABASE_URL`.
-- **Status (2026-11-03):** a app lê `APP_DATABASE_URL` (papel `app_rw`) antes da `DATABASE_URL`; o dono fica só no
+- **Status (2026-11-03):** a app lê `APP_DATABASE_URL` (papel `app_rw`) antes da `DATABASE_URL`; em Production, o dono fica só no
   build, que migra pela `DATABASE_URL` da integração (o inverso do `MIGRATION_DATABASE_URL` sugerido, para não
   mexer na variável que a integração Neon/Vercel gerencia). SQL do papel em `scripts/sql/papel-app-rw.sql`,
   provado por `test/integration/runtime-role.test.ts`. Fecha quando a variável existir em Production e o log

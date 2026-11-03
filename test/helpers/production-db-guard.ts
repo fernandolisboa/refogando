@@ -24,6 +24,7 @@ export const PRODUCTION_DB_HOST_PREFIX = 'ep-gentle-morning-'
 
 /** Variáveis que o Vercel/Neon põem para o banco da app (URLs completas). */
 const APP_DB_URL_VARS = [
+  'APP_DATABASE_URL',
   'DATABASE_URL',
   'DATABASE_URL_UNPOOLED',
   'POSTGRES_URL',

@@ -6,7 +6,7 @@
  * entrega e que o build usa para migrar. Assim o código pode ir para produção antes de a variável existir, e o
  * Preview (que só tem `DATABASE_URL`, da branch do PR) continua como estava.
  *
- * As migrações NÃO passam por aqui: `drizzle.config.ts` e `scripts/migrate` leem a URL do dono.
+ * As migrações NÃO passam por aqui: `drizzle.config.ts` (usado por `npm run db:migrate`) lê a URL do dono.
  */
 
 type Env = Record<string, string | undefined>

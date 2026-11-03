@@ -1,17 +1,26 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
-import { makeSql } from '@/db/client'
+import { makeDb, makeSql } from '@/db/client'
+import { setDb } from '@/server/deps'
+import { GET as searchGET } from '@/app/api/search/route'
+import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { randSuffix } from '../helpers/throwaway-db'
 
 /**
  * O papel de runtime da app (#644, ADR-0058). Roda o MESMO `scripts/sql/papel-app-rw.sql` que o Fernando cola no
- * SQL Editor do Neon (trocando o nome do papel, do dono e do banco pelos deste banco descartável) e prova que o
- * papel faz tudo o que a app faz em runtime (DML em todas as tabelas e sequências, inclusive as criadas DEPOIS por
- * uma migração) e nada do que o incidente de 2026-09-09 fez (DROP, TRUNCATE, ALTER, CREATE).
+ * SQL Editor do Neon, trocando os nomes do papel, do dono e do banco pelos deste banco descartável. O "dono" aqui é
+ * um papel SEM superusuário (como o `neondb_owner`), para os default privileges valerem nas mesmas condições.
+ *
+ * Prova: DML e `USAGE` em toda tabela e sequência de `public`; uma tabela criada DEPOIS pelo dono (uma migração) já
+ * nasce acessível; um caminho real da app (semear Receita com colunas geradas de FTS + `GET /api/search`, que passa
+ * por pg_trgm, unaccent e o limitador) roda com o papel; e nada do que o incidente de 2026-09-09 fez (DROP,
+ * TRUNCATE, ALTER, CREATE) passa. Não cobre a suíte inteira: a garantia de que o runtime não tem DDL é a revisão
+ * de código registrada no ADR-0058.
  */
 
 const ROLE = `app_rw_t${randSuffix()}`
+const OWNER_ROLE = `owner_t${randSuffix()}`
 const PASSWORD = `p${randSuffix()}${randSuffix()}`
 const PROBE = `zz_runtime_role_probe_${randSuffix()}`
 
@@ -30,9 +39,10 @@ async function pgCode(run: () => Promise<unknown>): Promise<string | undefined> 
 beforeAll(async () => {
   const url = inject('databaseUrl')
   owner = makeSql(url, { max: 1 })
-  const [{ me, db }] = await owner<{ me: string; db: string }[]>`select current_user as me, current_database() as db`
+  const [{ db }] = await owner<{ db: string }[]>`select current_database() as db`
+  await owner.unsafe(`create role "${OWNER_ROLE}" nologin; grant usage, create on schema public to "${OWNER_ROLE}"`)
   const script = readFileSync('scripts/sql/papel-app-rw.sql', 'utf8')
-    .replaceAll('neondb_owner', me)
+    .replaceAll('neondb_owner', OWNER_ROLE)
     .replace(/\bneondb\b/g, db)
     .replace(/\bapp_rw\b/g, ROLE)
     .replaceAll('COLE_A_SENHA', PASSWORD)
@@ -45,12 +55,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.end({ timeout: 5 })
-  if (owner) {
-    await owner.unsafe(`drop table if exists public."${PROBE}"`)
-    await owner.unsafe(`drop owned by "${ROLE}"`)
-    await owner.unsafe(`drop role if exists "${ROLE}"`)
-    await owner.end({ timeout: 5 })
+  if (!owner) return
+  await owner.unsafe(`drop table if exists public."${PROBE}"`)
+  // Só os papéis que existem: se o beforeAll falhou no meio, o erro dele é o que importa.
+  const existing = await owner<{ rolname: string }[]>`
+    select rolname from pg_roles where rolname in (${ROLE}, ${OWNER_ROLE})`
+  for (const { rolname } of existing) {
+    await owner.unsafe(`drop owned by "${rolname}"`)
+    await owner.unsafe(`drop role "${rolname}"`)
   }
+  await owner.end({ timeout: 5 })
 })
 
 describe('papel app_rw (scripts/sql/papel-app-rw.sql)', () => {
@@ -66,8 +80,7 @@ describe('papel app_rw (scripts/sql/papel-app-rw.sql)', () => {
     for (const priv of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
       const missing = await owner<{ relname: string }[]>`
         select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname = 'public' and c.relkind in ('r', 'p')
-          and case when c.relkind in ('r', 'p') then not has_table_privilege(${ROLE}, c.oid, ${priv}) else false end`
+        where n.nspname = 'public' and c.relkind in ('r', 'p') and not has_table_privilege(${ROLE}, c.oid, ${priv})`
       expect(missing.map((r) => r.relname), priv).toEqual([])
     }
     const seqs = await owner<{ relname: string }[]>`
@@ -78,7 +91,21 @@ describe('papel app_rw (scripts/sql/papel-app-rw.sql)', () => {
     expect(seqs.map((r) => r.relname)).toEqual([])
   })
 
-  it('faz DML de verdade (o upsert do limitador, ADR-0057) e advisory lock', async () => {
+  it('roda um caminho real da app: semear Receita (colunas geradas de FTS) e GET /api/search', async () => {
+    setDb(makeDb(app))
+    try {
+      const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+      await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Ovos Mexidos Cremosos', provenance: 'escrita_por_pessoa' })
+      const res = await searchGET(new Request('http://localhost/api/search?q=remos&locale=pt-BR'))
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { catalogo: { recipeId: string }[] }
+      expect(body.catalogo.map((h) => h.recipeId)).toContain(id)
+    } finally {
+      setDb(makeDb(owner))
+    }
+  })
+
+  it('faz o upsert do limitador (ADR-0057) e advisory lock', async () => {
     const key = `k${randSuffix()}`
     await app`insert into rate_limit_window (bucket, key, window_start, expires_at)
       values ('teste_papel', ${key}, now(), now() + interval '1 minute')
@@ -93,7 +120,10 @@ describe('papel app_rw (scripts/sql/papel-app-rw.sql)', () => {
   })
 
   it('tabela e sequência criadas DEPOIS pelo dono (uma migração) já nascem acessíveis', async () => {
-    await owner.unsafe(`create table public."${PROBE}" (id serial primary key, v text)`)
+    await owner.begin(async (tx) => {
+      await tx.unsafe(`set local role "${OWNER_ROLE}"`)
+      await tx.unsafe(`create table public."${PROBE}" (id serial primary key, v text)`)
+    })
     const [row] = await app.unsafe<{ id: number }[]>(`insert into public."${PROBE}" (v) values ('x') returning id`)
     expect(row.id).toBe(1)
     await app.unsafe(`delete from public."${PROBE}"`)

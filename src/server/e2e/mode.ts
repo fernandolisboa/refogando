@@ -65,7 +65,8 @@ export function e2eFakesActive(env: Env = process.env): boolean {
     throw new Error(`[e2e] ${E2E_FAKES_FLAG} exige DATABASE_URL postgres em loopback (localhost/127.0.0.1/::1).`)
   }
   // A app em runtime prefere APP_DATABASE_URL (#644): se ela existir, também tem que ser loopback.
-  if (env.APP_DATABASE_URL?.trim() && !isLoopbackUrl(env.APP_DATABASE_URL.trim(), ['postgres:', 'postgresql:'])) {
+  const appUrl = env.APP_DATABASE_URL?.trim()
+  if (appUrl && !isLoopbackUrl(appUrl, ['postgres:', 'postgresql:'])) {
     throw new Error(`[e2e] ${E2E_FAKES_FLAG} exige APP_DATABASE_URL ausente ou postgres em loopback.`)
   }
   for (const key of ['BETTER_AUTH_URL', 'APP_URL'] as const) {
