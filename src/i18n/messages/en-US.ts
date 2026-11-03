@@ -23,7 +23,14 @@ import {
 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
-  app: { name: 'Refogando', tagline: 'Cook up any idea' },
+  app: {
+    name: 'Refogando',
+    tagline: 'Cook up any idea',
+    descricao: "Recipes from the catalog, the community, and whatever's left in your fridge.",
+    tituloHome: 'Refogando: recipes from what you have at home',
+    descricaoHome:
+      "Search by dish or ingredient, or tell us what's left in the fridge and walk away with a recipe. Free, no ads.",
+  },
   // #451: aria-label suffix for the footer social links (only the suffix is translated; the network
   // brand name is not).
   footer: { abreEmNovaAba: 'opens in a new tab' },
@@ -268,18 +275,18 @@ export const enUS: Messages = {
   feed: {
     // #5 (Direção C): VISIBLE serif headline for the repouso feed — gives the INDEXABLE home a real
     // heading (the `<h1>` is sr-only). Honest about the ordering (recency): the public pool, newest first.
-    titulo: 'Community recipes',
-    subtitulo: 'What the community is cooking up, newest first.',
+    titulo: 'New recipes',
+    subtitulo: 'From the catalog and the community, newest first.',
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',
-    fim: "You've reached the end.",
+    fim: "That's all of them. Didn't find yours? Search for the dish up top.",
   },
   // #457: "Recipe of the week" editorial slot — above the resting feed on the home. Chosen by the
   // Curator or, absent a choice, the most popular of the approved catalog (mechanical fallback).
   // The item itself reuses `RecipeResultItem` (same card as the feed) + `busca.selo*`/`porAutor`/etc.
   receitaDaSemana: {
     titulo: 'Recipe of the week',
-    subtitulo: 'A catalog highlight, chosen by the curators.',
+    subtitulo: 'A catalog highlight to cook this week.',
   },
   // Home banner for signed-out visitors (#472): one line per load, picked by the home on the server.
   faixaHome: {
@@ -289,7 +296,7 @@ export const enUS: Messages = {
       'Refogando turns it into dinner.',
       'Tell us what you want to eat and Refogando puts the recipe together.',
     ],
-    botoes: ['Get started', 'Create account', 'Try it'],
+    botoes: ['Create a free account', 'Create a free account', 'Create a free account'],
   },
   // FOLLOWING feed (#277, ADR-0024) — logged-in-only, non-indexable surface (separate from the anon
   // home, Modelo B). Reuses feed.carregarMais/feed.fim + system.loading/system.error for pagination.
@@ -965,7 +972,7 @@ export const enUS: Messages = {
     derivarLimite: "You've hit the recipe copy limit for now. Frees up in ~{tempo}.",
     diffTitulo: 'What changed from the original',
     convidaEntrarTitulo: 'Sign in to do this',
-    convidaEntrarTexto: 'Create an account or sign in to create, save, and manage recipes.',
+    convidaEntrarTexto: 'With a free account, you can create recipes, save the ones you like, and make your own version.',
   },
   perfil: {
     titulo: 'Your profile',

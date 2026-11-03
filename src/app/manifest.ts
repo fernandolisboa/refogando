@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { MESSAGES } from '@/i18n/messages'
 
 // Manifest PWA (#270): convenção de arquivo do App Router → Next serve `/manifest.webmanifest`
 // e injeta `<link rel="manifest">`. Vive em `src/app/` (acima de `[locale]`), como o icon.svg.
@@ -8,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Refogando',
     short_name: 'Refogando',
-    description: 'App de receitas com IA.',
+    description: MESSAGES['pt-BR'].app.descricao,
     start_url: '/',
     display: 'standalone',
     background_color: '#FBF7EF',

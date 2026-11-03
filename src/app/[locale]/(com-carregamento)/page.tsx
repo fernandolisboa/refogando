@@ -69,8 +69,8 @@ export async function generateMetadata({
   return buildHomeMetadata({
     locale,
     baseUrl,
-    title: m.busca.titulo,
-    description: m.app.tagline,
+    title: m.app.tituloHome,
+    description: m.app.descricaoHome,
     brandName: m.app.name,
     refined: isRefinedHomeParams(sp),
   })
