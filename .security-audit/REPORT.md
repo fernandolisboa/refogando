@@ -200,7 +200,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   é feito com `BETTER_AUTH_SECRET`. Antes de ligar essa trava, confirme que Production tem as duas variáveis, senão
   o deploy cai.
 
-#### M-7 — Preview recebe cópia dos dados reais e, ao que tudo indica, o token de produção do Blob · ABERTO (#646) (CONFIRMADO em 2026-11-02: Preview e Production compartilham a mesma entrada de ANTHROPIC/GEMINI/WEB_SEARCH, BLOB_*, BETTER_AUTH_SECRET, CRON_SECRET, GOOGLE_* e DATABASE_* na Vercel; só RESEND_API_KEY é separada)
+#### M-7 — Preview recebe cópia dos dados reais e, ao que tudo indica, o token de produção do Blob · EM ANDAMENTO (#646, ADR-0059: workflow preview-db.yml no repo; falta a configuração na Vercel e no Neon, handoff 99) (CONFIRMADO em 2026-11-02: Preview e Production compartilham a mesma entrada de ANTHROPIC/GEMINI/WEB_SEARCH, BLOB_*, BETTER_AUTH_SECRET, CRON_SECRET, GOOGLE_* e DATABASE_* na Vercel; só RESEND_API_KEY é separada)
 - **Severidade:** Medium, 6.8 `CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N` · CWE-668 / CWE-200 · A05:2021
 - **Evidência:**
   - ADR-0047:40 diz que o Preview usa uma branch do Neon criada de `main` "e as chaves de verdade".
