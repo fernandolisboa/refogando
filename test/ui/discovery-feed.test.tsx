@@ -156,4 +156,18 @@ describe('DiscoveryFeed (#236) — feed seeded + paginação', () => {
     expect(screen.queryByRole('button', { name: MF.carregarMais })).not.toBeInTheDocument()
     expect(screen.queryByText(MF.fim)).not.toBeInTheDocument()
   })
+
+  it('D5 — no fim, "Procurar uma receita" põe o foco na caixa de busca do header (#search-q)', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <input id="search-q" aria-label={M.buscarLabel} />
+        <DiscoveryFeed initialItems={[feedItem('r1', 'Risoto')]} initialNextCursor={null} />
+      </LocaleProvider>,
+    )
+    expect(screen.getByText(MF.fim)).toBeInTheDocument()
+    expect(screen.getByText(MF.fimPergunta, { exact: false })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: MF.fimBuscar }))
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: M.buscarLabel }))
+  })
 })

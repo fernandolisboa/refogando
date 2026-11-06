@@ -18,7 +18,7 @@ describe('manifest — installability + landmine de marca', () => {
     expect(texto).not.toContain('bilíngue')
     expect(texto).not.toContain('bilingual')
     expect(texto).not.toMatch(/pt-br|en-us/)
-    expect(m.description).toBe('App de receitas com IA.')
+    expect(m.description).toBe('Receitas do catálogo, da comunidade e do que sobrou na sua geladeira.')
   })
 
   it('é instalável como app standalone a partir da raiz', () => {

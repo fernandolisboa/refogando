@@ -6,6 +6,7 @@ import { loadRecommendedCooks } from '@/server/user/recommended-cooks'
 import { COOKS_DIRECTORY_PAGE_SIZE, type RecommendedCook } from '@/domain/recommended-cooks-read'
 import { canonicalLocale, DEFAULT_LOCALE } from '@/i18n/locale'
 import { CooksDiscovery } from '@/components/recipe/cooks-discovery'
+import { MESSAGES } from '@/i18n/messages'
 
 /**
  * Descoberta de Cozinheiros dedicada (#308, `/cooks`) — Server Component que provê o ÚNICO `<main>` e
@@ -15,8 +16,17 @@ import { CooksDiscovery } from '@/components/recipe/cooks-discovery'
  * NOINDEX (Modelo B — o social fica FORA do SEO; a porta indexável é a Descoberta de Receitas). Fora do
  * sitemap. O `<h1>` localizado vive no client (useLocale) — um único `<main>`, um único `<h1>`.
  */
-export const metadata: Metadata = {
-  robots: { index: false, follow: false },
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params
+  const m = MESSAGES[canonicalLocale(rawLocale) ?? DEFAULT_LOCALE]
+  return {
+    title: `${m.descobrirCozinheiros.titulo} — ${m.app.name}`,
+    robots: { index: false, follow: false },
+  }
 }
 
 export default async function CooksPage({ params }: { params: Promise<{ locale: string }> }) {

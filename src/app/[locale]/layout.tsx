@@ -17,7 +17,7 @@ import { SiteFooter } from '@/components/site-footer'
 import { GuidedTour } from '@/components/onboarding/guided-tour'
 import { AccountNotice } from '@/components/profile/account-notice'
 import { LegalChangeNotice } from '@/components/legal/legal-change-notice'
-import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { DEFAULT_THEME_CLASS } from '@/lib/theme'
 import { THEME_INIT_SCRIPT } from '@/lib/theme-script'
@@ -25,9 +25,15 @@ import { getDb } from '@/server/deps'
 import { loadLayoutAppConfig, loadLayoutCozinhaVocab, type LayoutAppConfig } from '@/server/layout-data'
 import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
 
-export const metadata: Metadata = {
-  title: 'Refogando',
-  description: 'App de receitas com IA.',
+// Título e descrição padrão de toda página que não define os seus. A descrição sai no idioma da URL.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>
+}): Promise<Metadata> {
+  const { locale: rawLocale } = await params
+  const m = MESSAGES[canonicalLocale(rawLocale) ?? DEFAULT_LOCALE]
+  return { title: m.app.name, description: m.app.descricao }
 }
 
 // Locale-no-caminho (ADR-0020): o app inteiro vive sob `[locale]`, então este É o root layout

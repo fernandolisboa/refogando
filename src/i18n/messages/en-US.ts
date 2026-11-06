@@ -23,7 +23,14 @@ import {
 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
-  app: { name: 'Refogando', tagline: 'Cook up any idea' },
+  app: {
+    name: 'Refogando',
+    tagline: 'Cook up any idea',
+    descricao: "Recipes from the catalog, the community, and whatever's left in your fridge.",
+    tituloHome: 'Refogando: recipes from what you have at home',
+    descricaoHome:
+      "Search by dish or ingredient, or tell us what's left in the fridge and walk away with a recipe.",
+  },
   // #451: aria-label suffix for the footer social links (only the suffix is translated; the network
   // brand name is not).
   footer: { abreEmNovaAba: 'opens in a new tab' },
@@ -267,19 +274,21 @@ export const enUS: Messages = {
   // saíram com a fusão (#236): o `<h1>` é o da Busca e o feed de repouso é sempre o pool público anônimo.
   feed: {
     // #5 (Direção C): VISIBLE serif headline for the repouso feed — gives the INDEXABLE home a real
-    // heading (the `<h1>` is sr-only). Honest about the ordering (recency): the public pool, newest first.
-    titulo: 'Community recipes',
-    subtitulo: 'What the community is cooking up, newest first.',
+    // heading (the `<h1>` is sr-only). The public pool, catalog and community.
+    titulo: 'New recipes',
+    subtitulo: 'From the catalog and the community.',
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',
     fim: "You've reached the end.",
+    fimPergunta: "Didn't find what you were looking for?",
+    fimBuscar: 'Search for a recipe',
   },
   // #457: "Recipe of the week" editorial slot — above the resting feed on the home. Chosen by the
   // Curator or, absent a choice, the most popular of the approved catalog (mechanical fallback).
   // The item itself reuses `RecipeResultItem` (same card as the feed) + `busca.selo*`/`porAutor`/etc.
   receitaDaSemana: {
     titulo: 'Recipe of the week',
-    subtitulo: 'A catalog highlight, chosen by the curators.',
+    subtitulo: 'A catalog highlight to cook this week.',
   },
   // Home banner for signed-out visitors (#472): one line per load, picked by the home on the server.
   faixaHome: {
@@ -289,7 +298,7 @@ export const enUS: Messages = {
       'Refogando turns it into dinner.',
       'Tell us what you want to eat and Refogando puts the recipe together.',
     ],
-    botoes: ['Get started', 'Create account', 'Try it'],
+    botoes: ['Create account', 'Create account', 'Create account'],
   },
   // FOLLOWING feed (#277, ADR-0024) — logged-in-only, non-indexable surface (separate from the anon
   // home, Modelo B). Reuses feed.carregarMais/feed.fim + system.loading/system.error for pagination.
@@ -297,7 +306,7 @@ export const enUS: Messages = {
   // recipes"): the copy is true in both cases and bridges to discovery (AC4).
   seguindoFeed: {
     titulo: 'Following',
-    subtitulo: 'Recipes from the cooks you follow, newest first.',
+    subtitulo: 'Recipes from the cooks you follow.',
     precisaEntrar: 'Sign in to see recipes from the cooks you follow.',
     vazioTitulo: 'Nothing here yet',
     vazioCorpo: 'Follow cooks to see their recipes in your feed.',
@@ -935,7 +944,7 @@ export const enUS: Messages = {
   // invites for the Visitor (#22 descope: anon is read-only; any account action invites sign-in).
   minhasCriacoes: {
     titulo: 'My creations',
-    subtitulo: 'Everything you’ve created, newest first.',
+    subtitulo: 'Everything you’ve created.',
     vazio: "You haven't created any recipes yet.",
     criarPrimeira: 'Create my first recipe',
     // Dashed "start another" card in the grid (RefoStage "Minhas criações" prototype).
@@ -965,7 +974,7 @@ export const enUS: Messages = {
     derivarLimite: "You've hit the recipe copy limit for now. Frees up in ~{tempo}.",
     diffTitulo: 'What changed from the original',
     convidaEntrarTitulo: 'Sign in to do this',
-    convidaEntrarTexto: 'Create an account or sign in to create, save, and manage recipes.',
+    convidaEntrarTexto: 'With an account, you can create recipes, save the ones you like, and make your own version.',
   },
   perfil: {
     titulo: 'Your profile',
