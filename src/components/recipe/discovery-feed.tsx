@@ -42,6 +42,13 @@ export function DiscoveryFeed({
   const [loadMoreError, setLoadMoreError] = useState(false)
   const [endReached, setEndReached] = useState(initialNextCursor === null)
 
+  // Fim do feed: leva a pessoa à caixa de busca do header (`HomeSearchBar`, id `search-q`). O `focus()`
+  // rola até ela; sem a caixa montada (teste que monta só o feed), não faz nada.
+  const focarBusca = useCallback(() => {
+    const input = document.getElementById('search-q')
+    if (input instanceof HTMLInputElement) input.focus()
+  }, [])
+
   // Próximo cursor numa ref: o observer/loadMore o leem SEM stale-closure. Seedado com o do SSR.
   const cursorRef = useRef<string | null>(initialNextCursor)
   const abortRef = useRef<AbortController | null>(null)
@@ -169,7 +176,16 @@ export function DiscoveryFeed({
         {loadMoreError && <p className="text-fg">{messages.system.error}</p>}
         {isEmpty && <p>{mf.vazio}</p>}
         {endReached && items.length > 0 && (
-          <p className="font-display italic">{mf.fim}</p>
+          <p className="text-center">
+            <span className="font-display italic">{mf.fim}</span> {mf.fimPergunta}{' '}
+            <button
+              type="button"
+              onClick={focarBusca}
+              className="font-medium text-brand-ink underline-offset-4 hover:underline"
+            >
+              {mf.fimBuscar}
+            </button>
+          </p>
         )}
       </div>
     </div>

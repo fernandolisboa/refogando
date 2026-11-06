@@ -27,12 +27,11 @@ export const ptBR = {
     tagline: 'Cozinhe qualquer ideia',
     // Textos de vitrine (/super-copy, 2026-11-03): o que aparece na aba, no Google e no card do WhatsApp.
     // `descricao` é a padrão de toda página sem descrição própria (layout) e a do manifest; a home tem as suas.
-    // "Grátis e sem anúncios" se apoia nos Termos (item 2: "O app é gratuito, não tem publicidade"): se a
-    // cobrança ou anúncios chegarem, esta frase muda junto.
+    // Sem "grátis"/"sem anúncios": o dono pensa em cobrar por gerações e em parcerias (decisão de 2026-11-06).
     descricao: 'Receitas do catálogo, da comunidade e do que sobrou na sua geladeira.',
     tituloHome: 'Refogando: receitas com o que você tem em casa',
     descricaoHome:
-      'Busque por prato ou ingrediente, ou diga o que sobrou na geladeira e saia com uma receita. Grátis e sem anúncios.',
+      'Busque por prato ou ingrediente, ou diga o que sobrou na geladeira e saia com uma receita.',
   },
   // #451: sufixo do aria-label dos links de rede social do rodapé (só o sufixo é traduzido; o nome
   // de marca da rede, não). NUNCA rotular o app como "bilíngue" em texto ao usuário (regra do dono).
@@ -313,11 +312,14 @@ export const ptBR = {
     // (o `<h1>` é sr-only). Honesta com a ordenação (recência): o pool público, do mais novo ao mais antigo.
     // O feed mistura catálogo e comunidade (os cards dizem "Do catálogo"/"Da comunidade"): o título não pode
     // prometer só a comunidade.
-    titulo: 'Receitas novas',
-    subtitulo: 'Do catálogo e da comunidade, da mais nova para a mais antiga.',
+    titulo: 'Novas receitas',
+    subtitulo: 'Do catálogo e da comunidade.',
     vazio: 'Ainda não há receitas por aqui.',
     carregarMais: 'Carregar mais',
-    fim: 'Você viu todas. Não achou a sua? Busque pelo prato lá em cima.',
+    fim: 'Você chegou ao fim.',
+    // Só no feed da home (o Seguindo reusa só o `fim`): o botão põe o foco na caixa de busca do header.
+    fimPergunta: 'Não achou o que procurava?',
+    fimBuscar: 'Procurar uma receita',
   },
   // #457: slot editorial "Receita da semana" — acima do feed de repouso na home. Escolhida pelo
   // Curador ou, na ausência de escolha, pela mais popular do catálogo aprovado (fallback mecânico).
@@ -337,8 +339,8 @@ export const ptBR = {
       'O Refogando transforma isso no jantar.',
       'Você diz o que quer comer, o Refogando monta a receita.',
     ],
-    // O botão leva ao cadastro: diz isso e tira a dúvida do preço (Termos item 2: o app é gratuito).
-    botoes: ['Criar conta grátis', 'Criar conta grátis', 'Criar conta grátis'],
+    // O botão leva ao cadastro e diz isso ("Começar"/"Experimentar" escondiam o destino).
+    botoes: ['Criar conta', 'Criar conta', 'Criar conta'],
   },
   // Feed SEGUINDO (#277, ADR-0024) — superfície SÓ-LOGADA e NÃO-indexável (separada da home anon,
   // Modelo B). Reusa `feed.carregarMais`/`feed.fim` e `system.loading`/`system.error` na paginação.
@@ -346,7 +348,7 @@ export const ptBR = {
   // a copy é verdadeira nos dois casos e faz a ponte pra descoberta (AC4).
   seguindoFeed: {
     titulo: 'Seguindo',
-    subtitulo: 'Receitas de quem você segue, do mais novo ao mais antigo.',
+    subtitulo: 'Receitas de quem você segue.',
     precisaEntrar: 'Entre para ver as receitas de quem você segue.',
     vazioTitulo: 'Nada por aqui ainda',
     vazioCorpo: 'Siga cozinheiros para ver as receitas deles no seu feed.',
@@ -1020,7 +1022,7 @@ export const ptBR = {
   // Os selos REUSAM conceitos já localizados onde possível; aqui só o que é próprio da tela.
   minhasCriacoes: {
     titulo: 'Minhas criações',
-    subtitulo: 'Tudo o que você criou, do mais recente ao mais antigo.',
+    subtitulo: 'Tudo o que você criou.',
     vazio: 'Você ainda não criou nenhuma receita.',
     criarPrimeira: 'Criar minha primeira receita',
     // Card tracejado "começar outra" no grid (protótipo RefoStage "Minhas criações").
@@ -1056,7 +1058,7 @@ export const ptBR = {
     diffTitulo: 'O que mudou em relação à original',
     // Convites de entrar (gating consistente em /create, /conversation e nos botões do detalhe).
     convidaEntrarTitulo: 'Entre para fazer isso',
-    convidaEntrarTexto: 'Com uma conta grátis, você cria receitas, guarda as que gostou e faz a sua versão delas.',
+    convidaEntrarTexto: 'Com uma conta, você cria receitas, guarda as que gostou e faz a sua versão delas.',
   },
   // Perfil do Usuário (#124, frente Perfil — primeira fatia: nome + bio). Tela de edição
   // em /me/profile que consome o contrato `/api/me`. `email` é read-only (identidade). A
