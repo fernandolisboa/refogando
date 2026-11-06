@@ -69,6 +69,7 @@ O endpoint passou de 60 linhas de relato no minuto nesta instância (conta só r
 
 | Tag | Onde | Nível | O que diz |
 |---|---|---|---|
+| `[db]` | `src/server/deps.ts` | info | `runtime conecta como papel=<papel> origem=<APP_DATABASE_URL\|DATABASE_URL>`: uma linha por instância, na primeira conexão (#644, ADR-0058). Em produção, depois de criada a `APP_DATABASE_URL`, tem que dizer `papel=app_rw origem=APP_DATABASE_URL`; `papel=neondb_owner` em Production é a app rodando como dona do banco de novo. Só o nome do papel, nunca senha ou host. |
 | `[mail]` | `src/server/mail/mailer.ts` | info/warn | `envio desligado (<tipo>): falta …`, `Resend aceitou o envio (<tipo>)`, `Resend recusou o envio (<tipo>): HTTP <status>`, `falha ao chamar o Resend (<tipo>): <nome do erro>`. |
 | `[auth]` | `src/lib/auth.ts` | warn | `e-mail de conta não enviado (<reset\|verify\|finish>)`; `<etapa> falhou: <nome do erro>` (limpeza pós-cadastro). |
 | `[admin-erasure]` | `src/server/admin/account-closure.ts` | info/warn | uma linha por encerramento de conta pela equipe no Console (#606): `concluída: motivo=<menor_16\|violacao_grave> conteudoPublicoRemovido=<true\|false> emailEnviado=<true\|false>` (info; `emailEnviado` é se o Resend aceitou o e-mail de encerramento; se foi tentado, com o e-mail de conta ligado, fica em `account_closure.notified_by_email`); `e-mail de encerramento não enviado: erro=<nome>` (warn). Sem id, e-mail, nome ou @: quem decidiu e quando ficam em `account_closure`. O envio em si deixa também a linha `[mail] … (conta)`. |

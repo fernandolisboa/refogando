@@ -11,6 +11,7 @@
  *    VERCEL_DEPLOYMENT_ID) ⇒ lança. Vazio não conta: o harness zera as chaves que um `.env*` local
  *    (ex. `vercel env pull`) traria, e o `@next/env` só preenche chave `undefined`;
  *  - `DATABASE_URL` ausente, inválida ou com host fora de loopback ⇒ lança (o E2E nunca fala com o Neon);
+ *    `APP_DATABASE_URL`, que a app prefere em runtime (#644), também, quando definida;
  *  - `BETTER_AUTH_URL` e `APP_URL` precisam ser `http:` em loopback (o harness serve em localhost:3100).
  *
  * SEM imports `@/`: este módulo é importado pelo `next.config.ts` (tripwire de build) e pelo
@@ -62,6 +63,11 @@ export function e2eFakesActive(env: Env = process.env): boolean {
   }
   if (!isLoopbackUrl(env.DATABASE_URL, ['postgres:', 'postgresql:'])) {
     throw new Error(`[e2e] ${E2E_FAKES_FLAG} exige DATABASE_URL postgres em loopback (localhost/127.0.0.1/::1).`)
+  }
+  // A app em runtime prefere APP_DATABASE_URL (#644): se ela existir, também tem que ser loopback.
+  const appUrl = env.APP_DATABASE_URL?.trim()
+  if (appUrl && !isLoopbackUrl(appUrl, ['postgres:', 'postgresql:'])) {
+    throw new Error(`[e2e] ${E2E_FAKES_FLAG} exige APP_DATABASE_URL ausente ou postgres em loopback.`)
   }
   for (const key of ['BETTER_AUTH_URL', 'APP_URL'] as const) {
     if (!isLoopbackUrl(env[key], ['http:'])) {
