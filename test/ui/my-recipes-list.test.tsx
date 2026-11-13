@@ -140,7 +140,7 @@ describe('MyRecipesList (#61)', () => {
     renderList()
     expect(await screen.findByText(M.vazio)).toBeInTheDocument()
     const cta = screen.getByRole('link', { name: M.criarPrimeira })
-    expect(cta).toHaveAttribute('href', '/create')
+    expect(cta).toHaveAttribute('href', '/pt-BR/create')
   })
 
   it('T3 — Visitante: convite de entrar (sem fetch)', async () => {
@@ -151,7 +151,7 @@ describe('MyRecipesList (#61)', () => {
     // #458: propaga returnTo = pathname atual (/me/recipes).
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Fme%2Frecipes',
+      '/pt-BR/sign-in?returnTo=%2Fme%2Frecipes',
     )
     // Guest NÃO chama o endpoint.
     expect(fetchMock).not.toHaveBeenCalled()

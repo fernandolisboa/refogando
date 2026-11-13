@@ -80,7 +80,7 @@ describe('UsageGuide (/guia)', () => {
     await user.click(screen.getByRole('button', { name: g.tourBotao }))
     expect(Number(window.sessionStorage.getItem(TOUR_START_KEY))).toBeGreaterThan(0)
     expect(onStart).toHaveBeenCalledOnce()
-    expect(router.push).toHaveBeenCalledWith('/')
+    expect(router.push).toHaveBeenCalledWith('/pt-BR')
     window.removeEventListener(TOUR_START_EVENT, onStart)
   })
 

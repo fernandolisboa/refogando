@@ -13,7 +13,7 @@
  * montada mesmo que a sessão vire `null`. O Better Auth refaz o get-session ao voltar `online` (e o
  * `signOut` da saída zera o atom); sem isto o diálogo sumiria no meio do caminho.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'

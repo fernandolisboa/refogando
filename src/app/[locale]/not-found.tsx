@@ -3,7 +3,7 @@
  * Estado global "não encontrado" (issue #54). Client component pra ler messages.system
  * no locale atual e oferecer volta pra home. Renderizado dentro do LocaleProvider do layout.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { Button } from '@/components/ui/button'

@@ -13,7 +13,7 @@
  * O link aqui é só atalho: cada rota REVALIDA o papel server-side no seu `page.tsx`, então esconder um grupo
  * não é a barreira — o gate é. Cores: só tokens AA-verificados da #54.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { splitLocalePrefix } from '@/i18n/locale-path'

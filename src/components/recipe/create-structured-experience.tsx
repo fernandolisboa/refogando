@@ -34,7 +34,7 @@
  * idle/loading/error/impossible e REBAIXA para `<h2>` quando a Receita está na tela.
  */
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

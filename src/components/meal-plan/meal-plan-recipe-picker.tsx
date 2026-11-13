@@ -15,7 +15,7 @@
  * é planejável: filtrado por `passesOwnRecipeBarriers`, o MESMO critério do gate do servidor.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Sparkles } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { Input } from '@/components/ui/input'

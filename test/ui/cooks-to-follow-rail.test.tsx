@@ -96,7 +96,7 @@ describe('CooksToFollowRail (#278) — cartão rico (apresentacional)', () => {
     // um botão Seguir por cartão
     expect(screen.getAllByRole('button', { name: M.seguir })).toHaveLength(3)
     // link pro perfil público
-    expect(screen.getByRole('link', { name: /Rita Souza/ })).toHaveAttribute('href', '/u/ritacozinha')
+    expect(screen.getByRole('link', { name: /Rita Souza/ })).toHaveAttribute('href', '/pt-BR/u/ritacozinha')
   })
 
   it('renderiza as receitas do preview (título serif) + selo de IA ACESSÍVEL (aiLabel sr-only)', () => {

@@ -100,8 +100,8 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
 
     // ADR-0043: as abas vêm agrupadas sob o título da seção; a home é a aba "Descobrir" de "Explorar".
     const explorar = within(dialog).getByRole('group', { name: ptBR.nav.home })
-    expect(within(explorar).getByRole('link', { name: ptBR.nav.descobrir })).toHaveAttribute('href', '/')
-    expect(within(explorar).getByRole('link', { name: ptBR.nav.cozinheiros })).toHaveAttribute('href', '/cooks')
+    expect(within(explorar).getByRole('link', { name: ptBR.nav.descobrir })).toHaveAttribute('href', '/pt-BR')
+    expect(within(explorar).getByRole('link', { name: ptBR.nav.cozinheiros })).toHaveAttribute('href', '/pt-BR/cooks')
     // O Visitante não vê as seções pessoais.
     expect(within(dialog).queryByRole('group', { name: ptBR.nav.minhasReceitas })).toBeNull()
     expect(within(dialog).queryByRole('group', { name: ptBR.nav.planejar })).toBeNull()
@@ -131,14 +131,14 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
 
     // ADR-0043: "Minhas receitas" agrupa Criações e Salvos (#468); "Planejar", Cardápio, Listas e Despensa.
     const minhas = within(dialog).getByRole('group', { name: ptBR.nav.minhasReceitas })
-    expect(within(minhas).getByRole('link', { name: ptBR.nav.criacoes })).toHaveAttribute('href', '/me/recipes')
-    expect(within(minhas).getByRole('link', { name: ptBR.colecoes.titulo })).toHaveAttribute('href', '/me/saved')
+    expect(within(minhas).getByRole('link', { name: ptBR.nav.criacoes })).toHaveAttribute('href', '/pt-BR/me/recipes')
+    expect(within(minhas).getByRole('link', { name: ptBR.colecoes.titulo })).toHaveAttribute('href', '/pt-BR/me/saved')
     const planejar = within(dialog).getByRole('group', { name: ptBR.nav.planejar })
     expect(
       within(planejar)
         .getAllByRole('link')
         .map((a) => a.getAttribute('href')),
-    ).toEqual(['/me/meal-plan', '/me/shopping-lists', '/me/pantry'])
+    ).toEqual(['/pt-BR/me/meal-plan', '/pt-BR/me/shopping-lists', '/pt-BR/me/pantry'])
     // #277: a aba "Seguindo" (só-logada) aparece no drawer do logado.
     expect(within(dialog).getByRole('link', { name: ptBR.nav.seguindo })).toBeInTheDocument()
     // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
@@ -155,7 +155,7 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     await user.click(accountTrigger)
     await screen.findByRole('menu')
     expect(accountTrigger).toHaveAttribute('aria-expanded', 'true') // smoke: o menu abriu no jsdom
-    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/admin')
+    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/pt-BR/admin')
     expect(screen.getByRole('menuitem', { name: ptBR.nav.signOut })).toBeInTheDocument()
   })
 

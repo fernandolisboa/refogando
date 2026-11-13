@@ -100,7 +100,7 @@ describe('FollowingFeed (#277)', () => {
     // #458: propaga returnTo = pathname atual (/following).
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Ffollowing',
+      '/pt-BR/sign-in?returnTo=%2Ffollowing',
     )
     expect((fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
   })
@@ -151,7 +151,7 @@ describe('FollowingFeed (#277)', () => {
     expect(heading.tagName).toBe('H2')
     expect(screen.getByText(M.vazioCorpo)).toBeInTheDocument()
     // #308: o CTA agora leva à Descoberta de Cozinheiros dedicada.
-    expect(screen.getByRole('link', { name: M.vazioCta })).toHaveAttribute('href', '/cooks')
+    expect(screen.getByRole('link', { name: M.vazioCta })).toHaveAttribute('href', '/pt-BR/cooks')
     expect(screen.queryByRole('button', { name: MF.carregarMais })).not.toBeInTheDocument()
   })
 

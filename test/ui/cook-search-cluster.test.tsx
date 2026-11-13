@@ -48,7 +48,7 @@ describe('CookSearchCluster (#279)', () => {
     expect(screen.getByRole('heading', { name: M.titulo })).toBeInTheDocument()
     expect(screen.getByText('Ana')).toBeInTheDocument()
     expect(screen.getByText('@beto')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Ana/ })).toHaveAttribute('href', '/u/ana')
+    expect(screen.getByRole('link', { name: /Ana/ })).toHaveAttribute('href', '/pt-BR/u/ana')
   })
 
   it('<= COLLAPSED → sem "Ver todos"', () => {

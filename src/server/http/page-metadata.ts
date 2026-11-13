@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { MESSAGES, type Messages } from '@/i18n/messages'
 import { resolvePageLocale } from '@/server/http/page-locale'
+import { localizedPageAlternates } from '@/domain/page-seo'
 
 /**
  * #462: helpers de `generateMetadata` p/ dar um TÍTULO fino por página — 19 das 25 páginas herdavam o
@@ -27,12 +28,17 @@ export async function loggedInPageMetadata(
   return { title: pick(MESSAGES[locale]), robots: { index: false, follow: false } }
 }
 
-/** Título fino, INDEXÁVEL — páginas públicas sem tratamento de SEO especial (sign-in/up). */
+/**
+ * Título fino, INDEXÁVEL — páginas públicas sem tratamento de SEO especial (sign-in/up). `path` (sem locale, ex.
+ * `sign-in`) dá o canonical + hreflang (ADR-0061): sem ele, `?returnTo=` e as duas línguas viravam "cópia sem
+ * canônica" no Search Console.
+ */
 export async function publicPageMetadata(
   params: LocaleParams,
   pick: (m: Messages) => string,
+  path: string,
 ): Promise<Metadata> {
   const { locale: pathLocale } = await params
   const locale = resolvePageLocale({ urlLocale: pathLocale })
-  return { title: pick(MESSAGES[locale]) }
+  return { title: pick(MESSAGES[locale]), alternates: localizedPageAlternates(locale, path) }
 }

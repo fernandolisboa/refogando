@@ -10,7 +10,7 @@
  * lista órfã). O `<select>` é NATIVO como na barra de multi-adicionar (lista curta, testável sem portal).
  */
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { SHOPPING_LIST_NAME_MAX } from '@/domain/shopping-list'
 import { Button } from '@/components/ui/button'

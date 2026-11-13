@@ -17,7 +17,7 @@
  * chrome (Visitante vê o convite de entrar, não o form).
  */
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

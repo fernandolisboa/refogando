@@ -131,24 +131,24 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     const nav = renderNav('admin')
     expect(within(nav).getByRole('link', { name: A.navIa })).toHaveAttribute(
       'href',
-      '/admin/ia',
+      '/pt-BR/admin/ia',
     )
-    expect(within(nav).getByRole('link', { name: A.navDescoberta })).toHaveAttribute('href', '/admin/descoberta')
+    expect(within(nav).getByRole('link', { name: A.navDescoberta })).toHaveAttribute('href', '/pt-BR/admin/descoberta')
     expect(within(nav).getByRole('link', { name: A.navUsuarios })).toHaveAttribute(
       'href',
-      '/admin/users',
+      '/pt-BR/admin/users',
     )
     expect(within(nav).getByRole('link', { name: A.navModeracao })).toHaveAttribute(
       'href',
-      '/admin/moderation',
+      '/pt-BR/admin/moderation',
     )
     expect(within(nav).getByRole('link', { name: A.navTraducoes })).toHaveAttribute(
       'href',
-      '/admin/translations',
+      '/pt-BR/admin/translations',
     )
     expect(within(nav).getByRole('link', { name: A.navCatalogo })).toHaveAttribute(
       'href',
-      '/admin/catalog',
+      '/pt-BR/admin/catalog',
     )
   })
 })

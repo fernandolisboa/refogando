@@ -121,5 +121,27 @@ export function decideLocaleRedirect(input: {
   }
 }
 
+/**
+ * Prefixa com o locale um link INTERNO nu (`/cooks` → `/pt-BR/cooks`, `/` → `/pt-BR`), mantendo query e hash.
+ * ADR-0061: link sem locale passava pelo 302 do proxy (`decideLocaleRedirect`), que escolhe o idioma pelo
+ * cookie/Accept-Language e não pela página de onde o link saiu. O Google via esses links como "Página com
+ * redirecionamento", e a partir de `/en-US` (sem cookie e com Accept-Language em pt) caía em `/pt-BR`.
+ *
+ * Fica igual: link externo (`https://…`, `//host`, `mailto:`), âncora/relativo (`#x`, `?x`, `x/y`), o que já tem
+ * locale (mesmo com case errado: o proxy normaliza com 301 sem trocar o idioma) e o que o proxy não prefixa
+ * (`/api`, `/_next`, arquivo com extensão — o mesmo `matcher` de `src/proxy.ts`).
+ */
+export function localizeHref(locale: Locale, href: string): string {
+  if (!href.startsWith('/') || href.startsWith('//')) return href
+  const cut = href.search(/[?#]/)
+  const path = cut === -1 ? href : href.slice(0, cut)
+  const suffix = cut === -1 ? '' : href.slice(cut)
+  if (/^\/(api|_next)(\/|$)/.test(path)) return href
+  const lastSegment = path.slice(path.lastIndexOf('/') + 1)
+  if (lastSegment.includes('.')) return href
+  if (splitLocalePrefix(path).locale) return href
+  return localePrefixedPath(locale, path) + suffix
+}
+
 /** Re-export por conveniência pro proxy e pra validação de params. */
 export { SUPPORTED_LOCALES, type Locale }

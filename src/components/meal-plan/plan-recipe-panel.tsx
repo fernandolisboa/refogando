@@ -11,7 +11,7 @@
  * - `PlanRecipePopoverButton`: o botão que abre o painel num Popover.
  */
 import { forwardRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { CalendarPlus } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'

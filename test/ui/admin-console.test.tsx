@@ -32,6 +32,6 @@ describe('AccessDenied — veredito `denied` do Console', () => {
       </LocaleProvider>,
     )
     expect(screen.getByRole('heading', { name: A.acessoNegadoTitulo })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: A.voltarInicio })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: A.voltarInicio })).toHaveAttribute('href', '/pt-BR')
   })
 })

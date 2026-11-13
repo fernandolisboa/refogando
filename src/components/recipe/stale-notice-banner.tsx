@@ -14,7 +14,7 @@
  * não carrega slug hoje) ⇒ cai no fallback canônico por UUID `/{locale}/recipes/<uuid>` (que 308a pro
  * slug) — locale-prefixado, NUNCA link nu. Token NEUTRO (não âmbar): stale é informativo. `role="note"`.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'

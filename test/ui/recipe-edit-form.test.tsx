@@ -213,7 +213,7 @@ describe('RecipeEditForm (#21/#61)', () => {
     const del = fetchMock.mock.calls.find((c) => (c[1] as RequestInit).method === 'DELETE')
     expect(del).toBeDefined()
     expect(String(del![0])).toBe('/api/recipes/r-1')
-    expect(push).toHaveBeenCalledWith('/me/recipes')
+    expect(push).toHaveBeenCalledWith('/pt-BR/me/recipes')
   })
 
   it('T4 — en-US: confirmação de apagar em inglês', async () => {

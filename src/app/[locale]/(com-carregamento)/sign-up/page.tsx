@@ -14,7 +14,7 @@ import { publicPageMetadata } from '@/server/http/page-metadata'
 
 // #462: título fino ("Criar conta") — casa o <h1> do AuthForm. Página pública (sem noindex).
 export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
-  return publicPageMetadata(params, (m) => m.auth.criarConta)
+  return publicPageMetadata(params, (m) => m.auth.criarConta, 'sign-up')
 }
 
 // `?returnTo=` (#308): propagado pelo link entrar↔criar-conta; sanitizado na borda (anti open-redirect).

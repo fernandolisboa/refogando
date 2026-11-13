@@ -198,7 +198,7 @@ describe('PantryView', () => {
     // Ponte pra criação com os nomes da Despensa, sem gerar sozinha.
     expect(screen.getByRole('link', { name: M.criarComDespensa })).toHaveAttribute(
       'href',
-      `/create?q=${encodeURIComponent('uma receita com ovo')}`,
+      `/pt-BR/create?q=${encodeURIComponent('uma receita com ovo')}`,
     )
   })
 
@@ -232,7 +232,7 @@ describe('PantryView', () => {
     await user.click(within(card).getByRole('button', { name: `${M.porNaLista}: Bolo` }))
     expect(await within(card).findByRole('link', { name: M.abrirLista })).toHaveAttribute(
       'href',
-      '/me/shopping-lists/l1',
+      '/pt-BR/me/shopping-lists/l1',
     )
     expect(calls.find((c) => c.url.startsWith('/api/me/pantry/missing-to-list'))?.body).toEqual({
       recipeId: 'r2',

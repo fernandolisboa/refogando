@@ -843,7 +843,7 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Fcreate',
+      '/pt-BR/sign-in?returnTo=%2Fcreate',
     )
     // O chat NÃO está disponível para o Visitante.
     expect(screen.queryByLabelText(CV.inputLabel)).toBeNull()

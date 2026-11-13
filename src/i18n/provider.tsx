@@ -39,6 +39,14 @@ export function LocaleProvider({
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>
 }
 
+/**
+ * O locale do provider, ou `null` fora dele (sem lançar). Só para o `Link` de `@/components/locale-link`, que
+ * também roda em seams de teste sem provider: lá ele deixa o `href` como veio.
+ */
+export function useOptionalLocale(): Locale | null {
+  return useContext(LocaleContext)?.locale ?? null
+}
+
 export function useLocale(): Ctx {
   const ctx = useContext(LocaleContext)
   if (!ctx) throw new Error('useLocale fora de LocaleProvider')

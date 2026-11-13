@@ -17,7 +17,7 @@ import { publicPageMetadata } from '@/server/http/page-metadata'
 
 // #462: título fino ("Entrar") — casa o <h1> do AuthForm. Página pública (sem noindex).
 export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
-  return publicPageMetadata(params, (m) => m.nav.signIn)
+  return publicPageMetadata(params, (m) => m.nav.signIn, 'sign-in')
 }
 
 // `?returnTo=` (#308): pra onde voltar após o login (ex.: o anônimo que clicou "Seguir" na Descoberta de

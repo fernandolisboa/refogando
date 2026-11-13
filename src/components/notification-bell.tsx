@@ -21,7 +21,7 @@
  * do link do item, nunca aninhado (link dentro de link é HTML inválido e confunde o leitor de tela).
  */
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { BellIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

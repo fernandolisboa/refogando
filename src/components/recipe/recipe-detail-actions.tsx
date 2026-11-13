@@ -26,7 +26,7 @@
  */
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import type { RecipeView } from '@/domain/recipe-read'

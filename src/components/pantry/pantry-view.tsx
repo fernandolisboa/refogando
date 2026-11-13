@@ -12,7 +12,7 @@
  * o rótulo de "Tenho o básico" mostra a lista dela (a padrão, com o texto de sempre, para quem nunca mexeu).
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { ChefHat, ChevronDown, ShoppingCart, Sparkles, X } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'

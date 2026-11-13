@@ -8,6 +8,7 @@
 import { useRouter } from 'next/navigation'
 import { MapIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
+import { localizeHref } from '@/i18n/locale-path'
 import { Container } from '@/components/container'
 import { Button } from '@/components/ui/button'
 import { requestTourStart } from '@/components/onboarding/tour-signal'
@@ -29,14 +30,14 @@ const SECTIONS: ReadonlyArray<{ id: string; title: (g: Guia) => string; items: (
 ]
 
 export function UsageGuide() {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const g = messages.guia
   const router = useRouter()
 
   const startTour = () => {
     // O tour vive na home (os alvos estão lá): deixa o pedido e navega; o GuidedTour abre ao chegar.
     requestTourStart()
-    router.push('/')
+    router.push(localizeHref(locale, '/'))
   }
 
   return (

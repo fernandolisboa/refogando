@@ -93,7 +93,7 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     renderSlot('pt-BR')
     const link = screen.getByRole('link', { name: ptBR.nav.signIn })
     // #458: propaga returnTo (o mecanismo anti open-redirect do sign-in sanitiza no server).
-    expect(link).toHaveAttribute('href', '/sign-in?returnTo=%2Fpt-BR%2Fu%2Fana')
+    expect(link).toHaveAttribute('href', '/pt-BR/sign-in?returnTo=%2Fpt-BR%2Fu%2Fana')
     // Anônimo não tem menu de conta: NENHUM botão (o "Entrar" é um link, não um gatilho de popup).
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.queryByText(ptBR.nav.signOut)).not.toBeInTheDocument()
@@ -116,9 +116,9 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     await openMenu(user, 'Ana')
 
     const editar = screen.getByRole('menuitem', { name: ptBR.nav.editarPerfil })
-    expect(editar).toHaveAttribute('href', '/me/profile')
+    expect(editar).toHaveAttribute('href', '/pt-BR/me/profile')
     const publico = screen.getByRole('menuitem', { name: ptBR.nav.verPerfilPublico })
-    expect(publico).toHaveAttribute('href', '/u/ana')
+    expect(publico).toHaveAttribute('href', '/pt-BR/u/ana')
     expect(screen.getByRole('menuitem', { name: ptBR.nav.signOut })).toBeInTheDocument()
     // Sem papel curador+: "Painel" não aparece.
     expect(screen.queryByRole('menuitem', { name: ptBR.nav.painel })).not.toBeInTheDocument()
@@ -153,7 +153,7 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     // Editar perfil segue presente (não depende de handle).
     expect(screen.getByRole('menuitem', { name: ptBR.nav.editarPerfil })).toHaveAttribute(
       'href',
-      '/me/profile',
+      '/pt-BR/me/profile',
     )
   })
 
@@ -163,7 +163,7 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     mockSession = authed({ role: 'curador' })
     const { unmount } = renderSlot('pt-BR')
     await openMenu(user, 'Ana')
-    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/admin')
+    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/pt-BR/admin')
     unmount()
     // Settle: garante o menu portaleado do render anterior some antes do próximo abrir (evita
     // achar um menu obsoleto sob carga fria — flake conhecido da suíte ui).
@@ -346,7 +346,7 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
       </LocaleProvider>,
     )
     await openMenu(user, 'Ana')
-    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/admin')
+    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/pt-BR/admin')
     unmount()
   })
 

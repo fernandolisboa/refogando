@@ -512,7 +512,7 @@ describe('ShoppingListItemsView (ADR-0038 — guardar marcados na despensa)', ()
     await waitFor(() => expect(button).toBeEnabled())
     fireEvent.click(button)
     expect(await screen.findByRole('status')).toHaveTextContent(M.guardadosNaDespensa.replace('{n}', '2'))
-    expect(screen.getByRole('link', { name: M.abrirDespensa })).toHaveAttribute('href', '/me/pantry')
+    expect(screen.getByRole('link', { name: M.abrirDespensa })).toHaveAttribute('href', '/pt-BR/me/pantry')
     expect(calls).toContain('POST /api/me/shopping-lists/list-1/items/checked/to-pantry')
   })
 

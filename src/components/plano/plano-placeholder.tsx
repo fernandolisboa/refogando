@@ -7,7 +7,7 @@
  * `PrivacyPolicy`/`SeusDireitos`: client component pra acompanhar o locale em runtime, todo o texto
  * vem de `messages.plano` — nada hardcoded aqui.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { Button } from '@/components/ui/button'

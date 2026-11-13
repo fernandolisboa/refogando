@@ -13,7 +13,7 @@
  * `aria-live` PRÉ-existe no caller (que pendura o `headingRef` no heading do topo); aqui só vai o
  * conteúdo que entra/sai.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Button } from '@/components/ui/button'
 import type { Messages } from '@/i18n/messages'
 import type { RecipeView } from '@/domain/recipe-read'

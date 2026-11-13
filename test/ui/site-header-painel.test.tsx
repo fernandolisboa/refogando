@@ -72,7 +72,7 @@ describe('Header — afordância "Painel" no menu da conta, só para curador+ (#
     renderHeader()
     await openAccountMenu(user)
     const item = screen.getByRole('menuitem', { name: PAINEL })
-    expect(item).toHaveAttribute('href', '/admin')
+    expect(item).toHaveAttribute('href', '/pt-BR/admin')
   })
 
   it('admin VÊ o item "Painel"', async () => {

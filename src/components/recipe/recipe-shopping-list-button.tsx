@@ -18,7 +18,7 @@
  * adiciona a Receita na lista recém-criada — espelha `CollectionPanel` (criar já salva).
  */
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { ShoppingCart } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'

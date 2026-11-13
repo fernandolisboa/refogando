@@ -70,9 +70,9 @@ describe('SectionTabs (ADR-0043)', () => {
     renderTabs('/pt-BR/me/pantry')
     expect(screen.getByRole('navigation')).toHaveAccessibleName(ptBR.nav.planejar)
     expect(tabs()).toEqual([
-      [ptBR.nav.cardapio, '/me/meal-plan'],
-      [ptBR.listaDeCompras.indiceTitulo, '/me/shopping-lists'],
-      [ptBR.nav.despensa, '/me/pantry'],
+      [ptBR.nav.cardapio, '/pt-BR/me/meal-plan'],
+      [ptBR.listaDeCompras.indiceTitulo, '/pt-BR/me/shopping-lists'],
+      [ptBR.nav.despensa, '/pt-BR/me/pantry'],
     ])
     expect(screen.getByRole('link', { name: ptBR.nav.despensa })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('link', { name: ptBR.nav.cardapio })).not.toHaveAttribute('aria-current')
@@ -91,8 +91,8 @@ describe('SectionTabs (ADR-0043)', () => {
     authMock.current = logged
     renderTabs('/pt-BR/me/saved')
     expect(tabs()).toEqual([
-      [ptBR.nav.criacoes, '/me/recipes'],
-      [ptBR.colecoes.titulo, '/me/saved'],
+      [ptBR.nav.criacoes, '/pt-BR/me/recipes'],
+      [ptBR.colecoes.titulo, '/pt-BR/me/saved'],
     ])
   })
 
@@ -100,9 +100,9 @@ describe('SectionTabs (ADR-0043)', () => {
     authMock.current = logged
     renderTabs('/pt-BR/cooks')
     expect(tabs()).toEqual([
-      [ptBR.nav.descobrir, '/'],
-      [ptBR.nav.cozinheiros, '/cooks'],
-      [ptBR.nav.seguindo, '/following'],
+      [ptBR.nav.descobrir, '/pt-BR'],
+      [ptBR.nav.cozinheiros, '/pt-BR/cooks'],
+      [ptBR.nav.seguindo, '/pt-BR/following'],
     ])
   })
 

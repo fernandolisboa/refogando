@@ -185,7 +185,7 @@ describe('NotificationBell (#371)', () => {
     renderBell()
     await user.click(screen.getByRole('button', { name: /Notificações/ }))
     const item = await screen.findByRole('menuitem', { name: /Ana começou a seguir você/ })
-    expect(item).toHaveAttribute('href', '/u/ana')
+    expect(item).toHaveAttribute('href', '/pt-BR/u/ana')
   })
 
   it('review_on_recipe com recipeId: MENUITEM pro detalhe canônico no locale', async () => {

@@ -41,7 +41,7 @@
  * sumir (no `signOut` ou num refetch no meio do pedido) e a saída perderia o destino e o aviso.
  * ADR-0010: route handler via fetch, nunca Server Action.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { errorCode } from '@/lib/http-error'

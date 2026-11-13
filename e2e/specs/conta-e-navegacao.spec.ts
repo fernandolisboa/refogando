@@ -145,7 +145,8 @@ test('logado percorre todas as abas das seções; Planejar lembra a última aba'
   await waitForHydration(page)
   // No celular o link da seção mora no header oculto (o menu lista as abas direto): confere o destino.
   const planejarLink = page.locator('header nav a[data-tour="nav-planejar"]')
-  await expect(planejarLink).toHaveAttribute('href', ultima.href)
+  // ADR-0061: o Link do app prefixa o locale da página no href.
+  await expect(planejarLink).toHaveAttribute('href', `/pt-BR${ultima.href}`)
   if (!isMobile) {
     await planejarLink.click()
     await expect(page).toHaveURL(new RegExp(`${pathFor(ultima.href)}$`))

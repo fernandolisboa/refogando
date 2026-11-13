@@ -4,7 +4,7 @@
  * aviso. Renderiza só quando `visivel`. `comLink` mostra "Editar no perfil"; os caminhos de dentro do drawer
  * de criação não o usam (navegar para fora no meio de um pedido perderia o que foi digitado).
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 
 export function RestricoesPerfilHint({

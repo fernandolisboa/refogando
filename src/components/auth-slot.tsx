@@ -24,7 +24,7 @@
  *   e passaram a morar AQUI; por isso o gating de papel (#125/#51, fail-closed) também vive aqui.
  */
 import { useEffect, useRef } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { ChevronDownIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'

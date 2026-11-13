@@ -9,7 +9,7 @@
  *    `ConsoleShell` → rende um `<section>`, pra não aninhar landmarks (HTML inválido + a11y), com
  *    `<h2>`: o `<h1>` da página já é o título da seção no cabeçalho do shell.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { Button } from '@/components/ui/button'

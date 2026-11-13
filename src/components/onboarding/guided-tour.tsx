@@ -15,7 +15,7 @@
  * explícitos.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { Dialog } from 'radix-ui'
 import { XIcon } from 'lucide-react'

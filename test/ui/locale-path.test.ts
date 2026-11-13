@@ -8,6 +8,7 @@ import {
   splitLocalePrefix,
   decideLocaleRedirect,
   localePrefixedPath,
+  localizeHref,
 } from '@/i18n/locale-path'
 
 describe('splitLocalePrefix', () => {
@@ -167,5 +168,41 @@ describe('decideLocaleRedirect', () => {
       acceptLanguage: null,
     })
     expect(cased?.status).toBe(301)
+  })
+})
+
+describe('localizeHref (ADR-0061) — link interno nu ganha o locale da página', () => {
+  it('prefixa caminho nu, mantendo query e hash; a raiz vira /{locale}', () => {
+    expect(localizeHref('en-US', '/cooks')).toBe('/en-US/cooks')
+    expect(localizeHref('pt-BR', '/')).toBe('/pt-BR')
+    expect(localizeHref('pt-BR', '/?q=bolo')).toBe('/pt-BR?q=bolo')
+    expect(localizeHref('en-US', '/sign-in?returnTo=%2Fme')).toBe('/en-US/sign-in?returnTo=%2Fme')
+    expect(localizeHref('pt-BR', '/me/profile#seus-dados')).toBe('/pt-BR/me/profile#seus-dados')
+  })
+
+  it('deixa intacto o que já tem locale (inclusive com case errado: o proxy normaliza com 301)', () => {
+    expect(localizeHref('en-US', '/pt-BR/recipes/bolo')).toBe('/pt-BR/recipes/bolo')
+    expect(localizeHref('en-US', '/pt-br/cooks')).toBe('/pt-br/cooks')
+    expect(localizeHref('pt-BR', '/en-US')).toBe('/en-US')
+  })
+
+  it('deixa intacto o que não é página do app: externo, protocolo-relativo, âncora, api, _next e arquivo', () => {
+    for (const href of [
+      'https://ex.com/x',
+      '//ex.com/x',
+      'mailto:a@b.c',
+      '#passo-1',
+      '?q=x',
+      '/api/me',
+      '/_next/static/x.js',
+      '/opengraph-image.png',
+      '/apple-icon.png?x=1',
+    ]) {
+      expect(localizeHref('pt-BR', href)).toBe(href)
+    }
+  })
+
+  it('não confunde rota que só COMEÇA com "api" com a API', () => {
+    expect(localizeHref('pt-BR', '/apis')).toBe('/pt-BR/apis')
   })
 })

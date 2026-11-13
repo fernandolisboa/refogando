@@ -96,7 +96,7 @@ export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap
 /**
  * Mapa de hreflang de uma rota estática por locale (`<base>/{locale}/{path}`): cada locale suportado +
  * `x-default` → versão no DEFAULT_LOCALE. Fonte única do esquema: o sitemap e o `alternates` das páginas
- * legais (`legal-pages-seo.ts`, #611) usam este.
+ * legais e as demais páginas públicas (`page-seo.ts`, #611/ADR-0061) usam este.
  */
 export function staticPathHreflang(baseUrl: string, path: string): Record<string, string> {
   const languages: Record<string, string> = {}

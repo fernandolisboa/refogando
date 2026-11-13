@@ -14,7 +14,7 @@
  * plan.ts). Visitante (sem sessão) já tem o próprio convite de login nesses fluxos; não duplicamos
  * aqui. Tokens NEUTROS (âmbar é exclusivo do Aviso de restrição, ADR-0004) — este NÃO é um erro.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 

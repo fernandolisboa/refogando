@@ -13,7 +13,7 @@
  * servidor e hidratação pintam a mesma. Sem guardar a última no navegador: seria mais um item no armazenamento
  * local que a Política lista um a um (item 8), por um ganho pequeno.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'

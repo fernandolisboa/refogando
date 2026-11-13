@@ -15,7 +15,7 @@
  * aborta na desmontagem/troca (AbortController). `open` é CONTROLADO pelo pai (`ProfileFollowSection`).
  */
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import {
   Sheet,
   SheetContent,

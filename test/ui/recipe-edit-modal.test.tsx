@@ -189,7 +189,7 @@ describe('RecipeEditModal (#192)', () => {
     const del = fetchMock.mock.calls.find((c) => (c[1] as RequestInit).method === 'DELETE')
     expect(del).toBeDefined()
     expect(String(del![0])).toBe('/api/recipes/r-1')
-    expect(push).toHaveBeenCalledWith('/me/recipes')
+    expect(push).toHaveBeenCalledWith('/pt-BR/me/recipes')
   })
 
   it('Cancelar fecha o modal sem nenhum PATCH', async () => {

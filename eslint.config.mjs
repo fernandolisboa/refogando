@@ -52,6 +52,27 @@ const eslintConfig = [
       ],
     },
   },
+  {
+    // ADR-0061: link interno sem locale passa pelo 302 do proxy, que escolhe o idioma pelo cookie e não pela
+    // página (o Google via "Página com redirecionamento" e o /en-US caía no /pt-BR). O `Link` de
+    // `@/components/locale-link` prefixa o href com o locale da página.
+    files: ['src/**'],
+    ignores: ['src/components/locale-link.tsx', 'src/components/recipe/recipe-link.tsx'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'next/link',
+              importNames: ['default'],
+              message: 'Use o Link de @/components/locale-link (prefixa o locale; ADR-0061).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]
 
 export default eslintConfig

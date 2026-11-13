@@ -204,7 +204,7 @@ describe('MealPlanRecipePicker (ADR-0035 dec.4)', () => {
     mockFetch({ saved: [], mine: [item({ id: 'c', name: 'Brincadeira', resultKind: 'playful' })] })
     renderPicker()
     expect(await screen.findByText(M.semReceitas, { exact: false })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: M.explorar })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: M.explorar })).toHaveAttribute('href', '/pt-BR')
   })
 
   it('falha ao carregar o acervo: alerta', async () => {
@@ -261,7 +261,7 @@ describe('MealPlanRecipePicker — Anotação (ADR-0037)', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: M.refeicao }), 'jantar')
     expect(screen.getByRole('link', { name: M.criarNova })).toHaveAttribute(
       'href',
-      `/create?q=${encodeURIComponent('uma receita para o jantar')}&planDay=2026-10-02&planSlot=jantar`,
+      `/pt-BR/create?q=${encodeURIComponent('uma receita para o jantar')}&planDay=2026-10-02&planSlot=jantar`,
     )
   })
 })

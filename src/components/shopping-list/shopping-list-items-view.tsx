@@ -15,7 +15,7 @@
  * agrega por nome com os demais no servidor (mesma chave da A2 — `computeMatchKey`).
  */
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Pencil, Trash2 } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'

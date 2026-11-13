@@ -34,7 +34,7 @@
  * Por que criar conta (#472): no cadastro, três bullets (`auth.vantagens`) logo abaixo do título.
  */
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'
