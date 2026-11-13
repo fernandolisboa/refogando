@@ -34,10 +34,10 @@
  * Por que criar conta (#472): no cadastro, três bullets (`auth.vantagens`) logo abaixo do título.
  */
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
-import { localePrefixedPath } from '@/i18n/locale-path'
+import { localePrefixedPath, localizeHref } from '@/i18n/locale-path'
 import { signIn, signUp } from '@/lib/auth-client'
 import { holdSessionLossReload } from '@/components/session-loss-guard'
 import { safeInternalPath } from '@/domain/safe-redirect'
@@ -82,7 +82,9 @@ export function AuthForm({
   // #602: o `callbackURL` que vai ao Better Auth (Google, link de confirmação) sai SEM o `#…`: o originCheck dele
   // recusa um caminho com fragmento (403 INVALID_CALLBACK_URL), e o "entrar de novo para excluir a conta" volta a
   // `/me/profile#seus-dados`. Só a navegação do login por senha (`router.push(dest)`) leva o fragmento.
-  const callbackDest = dest.split('#')[0] || '/'
+  // ADR-0061: os destinos saem com o locale desta tela (senão o 302 do proxy escolhe o idioma pelo cookie e quem
+  // entra pela `/en-US/sign-in` com cookie pt cai em `/pt-BR/...`).
+  const callbackDest = localizeHref(locale, dest.split('#')[0] || '/')
   // O link entrar↔criar-conta PROPAGA o returnTo (senão o anônimo que clicou "Seguir" o perderia ao
   // trocar pra "Criar conta"). Sem returnTo, fica o href nu de antes.
   const toggleBase = isSignUp ? '/sign-in' : '/sign-up'
@@ -157,7 +159,7 @@ export function AuthForm({
       const enter = () => {
         navigating = true
         router.refresh()
-        router.push(dest)
+        router.push(localizeHref(locale, dest))
       }
       if (isSignUp) {
         // #470: com a confirmação de email ligada no servidor (e-mail de conta configurado), o cadastro NÃO

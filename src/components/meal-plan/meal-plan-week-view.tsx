@@ -21,7 +21,7 @@
  * recarregar/voltar cair na mesma semana.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   ChevronLeft,

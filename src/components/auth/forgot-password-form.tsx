@@ -13,7 +13,7 @@
  * `redirectTo` leva o locale atual: o link do e-mail volta pra `/{locale}/reset-password?token=…`.
  */
 import { useState, type FormEvent } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { requestPasswordReset } from '@/lib/auth-client'
 import { Alert, AlertDescription } from '@/components/ui/alert'

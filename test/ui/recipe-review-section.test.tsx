@@ -161,7 +161,7 @@ describe('RecipeReviewSection (#363)', () => {
     expect(screen.getByText('★ 4,5 · 2 avaliações')).toBeInTheDocument()
     expect(screen.getByText('delícia')).toBeInTheDocument()
     // byline linka /u/handle.
-    expect(screen.getByRole('link', { name: 'Ana' })).toHaveAttribute('href', '/u/ana')
+    expect(screen.getByRole('link', { name: 'Ana' })).toHaveAttribute('href', '/pt-BR/u/ana')
   })
 
   it('contagem 1 usa a chave singular', () => {
@@ -180,7 +180,7 @@ describe('RecipeReviewSection (#363)', () => {
     // #458: propaga returnTo = pathname atual.
     expect(screen.getByRole('link', { name: M.convidaEntrar })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
+      '/pt-BR/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
     )
     expect(screen.queryByRole('radiogroup')).toBeNull()
   })

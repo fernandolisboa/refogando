@@ -152,8 +152,8 @@ function renderBase(
  * / "começou a seguir você" precisam LEVAR ao alvo.
  *
  * Mapeamento (ADR-0028):
- *  - `new_follower` → perfil público do ator `/u/<handle>` (sem prefixo de locale — o proxy prefixa,
- *    igual ao `CookCard`/`AuthSlot`). Ator soft-deletado (handle degradado a null) ⇒ SEM link (o item
+ *  - `new_follower` → perfil público do ator `/u/<handle>` (sem prefixo de locale — o `Link` do app
+ *    prefixa, ADR-0061, igual ao `CookCard`/`AuthSlot`). Ator soft-deletado (handle degradado a null) ⇒ SEM link (o item
  *    degrada a texto, coerente com a variante anônima do render — não linka `/u/undefined`).
  *  - eventos de RECEITA (`review_on_recipe`, `review_moderated`, `recipe_moderated`, `image_moderated`)
  *    → detalhe canônico via `recipeDetailPath(locale, <uuid>)` = `/{locale}/recipes/<uuid>`, que 308a

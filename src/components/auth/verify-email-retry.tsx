@@ -5,7 +5,7 @@
  * `returnTo` segue adiante como destino pós-confirmação do link novo.
  */
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { ResendVerification } from '@/components/auth/resend-verification'
 import { Input } from '@/components/ui/input'

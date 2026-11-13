@@ -244,7 +244,7 @@ describe('UsersSection — gaveta de detalhes e papel', () => {
     for (const radio of within(dialog).getAllByRole('radio')) expect(radio).toBeDisabled()
     expect(within(dialog).queryByRole('link', { name: new RegExp(A.usuariosVerPerfil) })).toHaveAttribute(
       'href',
-      '/u/anasouza',
+      '/pt-BR/u/anasouza',
     )
     await u.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

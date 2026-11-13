@@ -475,7 +475,7 @@ export function RecipeEditForm({
         return
       }
       // Apagada: volta para "Minhas criações" (o detalhe desta receita some).
-      router.push('/me/recipes')
+      router.push(`/${currentLocale}/me/recipes`)
       router.refresh()
     } catch {
       // Mesma razão: o erro só fica visível com o diálogo fechado.

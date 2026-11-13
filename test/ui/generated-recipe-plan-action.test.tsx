@@ -82,7 +82,7 @@ describe('GeneratedRecipePlanAction (ADR-0040)', () => {
     await user.click(screen.getByRole('button', { name: rotulo }))
     expect(await screen.findByRole('link', { name: M.verCardapio })).toHaveAttribute(
       'href',
-      '/me/meal-plan?semana=2026-10-05',
+      '/pt-BR/me/meal-plan?semana=2026-10-05',
     )
     expect(calls).toEqual([
       { url: '/api/me/meal-plan/entries', method: 'POST', body: { recipeId: 'r-nova', day: '2026-10-06', slot: 'jantar' } },

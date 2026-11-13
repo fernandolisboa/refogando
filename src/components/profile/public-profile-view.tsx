@@ -11,7 +11,7 @@
  * SEGURANÇA dos links: o `href` é re-guardado por `safeHttpUrl` (#127, defesa-em-profundidade)
  * ANTES de emitir; `rel="noopener noreferrer"` + `target="_blank"` em todo link externo.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { safeHttpUrl } from '@/domain/links'
 import type { PublicProfile, ProfileFollowUser } from '@/domain/recipe-profile-read'
 import type { Messages } from '@/i18n/messages'

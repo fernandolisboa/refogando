@@ -12,7 +12,7 @@
  * qualquer live region (não é status efêmero). `<h2>` sob o `<h1>` sr-only da `SearchExperience`. Só-logado,
  * então os cartões usam o default `authed=true` (Seguir inline).
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { CookCard } from './cook-card'
 import type { RecommendedCook } from '@/domain/recommended-cooks-read'

@@ -116,7 +116,7 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     await user.click(screen.getByLabelText(ptBR.categoriaLabel.sobremesa))
     const cta = await screen.findByRole('link', { name: M.gerarComIa })
     // Sem termo: leva ao /create cru (sem ?q= vazio espúrio) — preserva a guarda do ramo bare-/create.
-    expect(cta).toHaveAttribute('href', '/create')
+    expect(cta).toHaveAttribute('href', '/pt-BR/create')
   })
 
   it('C2 — logado: termo sem resultado → cartão leva ao /create?q=<termo>', async () => {
@@ -128,7 +128,7 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     await user.type(screen.getByRole('searchbox'), 'feijao tropeiro')
     const cta = await screen.findByRole('link', { name: M.gerarComIa })
     // O href carrega o termo buscado, URL-encoded (espaço → %20).
-    expect(cta).toHaveAttribute('href', '/create?q=feijao%20tropeiro')
+    expect(cta).toHaveAttribute('href', '/pt-BR/create?q=feijao%20tropeiro')
   })
 
   it('C2b — REBAIXAMENTO: COM resultados o CARTÃO "Gerar com IA" do vazio NÃO aparece (o atalho discreto sim, ver search-gerar-atalho)', async () => {
@@ -167,7 +167,7 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     // gerar sobrevivem ao login (antes voltava à home sem o termo).
     expect(screen.getByRole('link', { name: NAV.signIn })).toHaveAttribute(
       'href',
-      `/sign-in?returnTo=${encodeURIComponent('/create?q=feijao')}`,
+      `/pt-BR/sign-in?returnTo=${encodeURIComponent('/create?q=feijao')}`,
     )
     expect(screen.getByText(MI.convidaEntrarTexto)).toBeInTheDocument()
   })
@@ -200,7 +200,7 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     await user.type(screen.getByRole('searchbox'), 'feijao')
     // No vazio, enquanto a sessão resolve, o cartão é o LINK (não o convite).
     const cta = await screen.findByRole('link', { name: M.gerarComIa })
-    expect(cta).toHaveAttribute('href', '/create?q=feijao')
+    expect(cta).toHaveAttribute('href', '/pt-BR/create?q=feijao')
     expect(screen.queryByText(MI.convidaEntrarTexto)).not.toBeInTheDocument()
   })
 })

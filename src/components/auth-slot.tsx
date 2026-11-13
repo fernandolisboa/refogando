@@ -24,7 +24,7 @@
  *   e passaram a morar AQUI; por isso o gating de papel (#125/#51, fail-closed) também vive aqui.
  */
 import { useEffect, useRef } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { ChevronDownIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
@@ -137,7 +137,7 @@ export function AuthSlot() {
         <ChevronDownIcon aria-hidden="true" className="size-4 shrink-0 text-muted" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {/* "Ver meu perfil público" → /u/<handle> (sem prefixo de locale: o proxy prefixa). Só
+        {/* "Ver meu perfil público" → /u/<handle> (o `Link` do app prefixa o locale, ADR-0061). Só
             renderiza com handle presente. asChild deixa o <a> herdar role=menuitem. */}
         {handle && (
           <DropdownMenuItem asChild>

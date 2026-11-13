@@ -20,7 +20,7 @@
  * descrição → ingredientes → passos → notas → (metadados/restrições/tags) → crédito
  * "por <name>" MENOR ao FINAL. A foto e a legenda ficam em foco; o crédito fecha a leitura.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
 import type { RecipeView } from '@/domain/recipe-read'
 import { isRestricao } from '@/domain/vocabulary'

@@ -243,7 +243,7 @@ describe('ConversaFocusedView (#60/#104)', () => {
     // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Fcreate',
+      '/pt-BR/sign-in?returnTo=%2Fcreate',
     )
     // Sem input do chat e exatamente UM heading nível 1 (conversa.titulo).
     expect(screen.queryByLabelText(M.inputLabel)).toBeNull()
@@ -688,7 +688,7 @@ describe('ConversaFocusedView (#60/#104)', () => {
     // CRIAR unificada (#104 S7) — `/create?mode=conversa`, NÃO o antigo `/conversation`.
     expect(screen.getByRole('link', { name: M.novaConversa })).toHaveAttribute(
       'href',
-      '/create?mode=conversa',
+      '/pt-BR/create?mode=conversa',
     )
     // Não renderizou o chat (sem input) e não quebrou (heading nível 1 presente).
     expect(screen.queryByLabelText(M.inputLabel)).toBeNull()

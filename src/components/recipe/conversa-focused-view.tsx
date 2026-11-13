@@ -17,7 +17,7 @@
  * Aviso de restrição; banners playful/erro/sistema usam tokens NEUTROS.
  */
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

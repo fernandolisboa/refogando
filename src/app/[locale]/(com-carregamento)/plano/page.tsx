@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PlanoPlaceholder } from '@/components/plano/plano-placeholder'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
+import { localizedPageAlternates } from '@/domain/page-seo'
 
 /**
  * Página placeholder `/plano` (Fase 2 de billing, flag-off — ver
@@ -20,6 +21,8 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].plano.metaTitulo,
+    // ADR-0061: canonical + hreflang (sem ele as duas línguas viravam "cópia sem canônica").
+    alternates: localizedPageAlternates(locale, 'plano'),
   }
 }
 

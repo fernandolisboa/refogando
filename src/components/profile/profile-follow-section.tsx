@@ -25,7 +25,7 @@
  * (same-origin) — o estado É viewer-personalizado, NUNCA `credentials:'omit'` (≠ feed anon).
  */
 import { useEffect, useState, type MouseEvent } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'

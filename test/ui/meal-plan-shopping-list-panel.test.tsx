@@ -174,7 +174,7 @@ describe('MealPlanShoppingListPanel (ADR-0035 dec.5)', () => {
     expect(
       await screen.findByText(M.listaGerada.replace('{n}', '5').replace('{lista}', 'Semana'), { exact: false }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: M.abrirLista })).toHaveAttribute('href', '/me/shopping-lists/nova')
+    expect(screen.getByRole('link', { name: M.abrirLista })).toHaveAttribute('href', '/pt-BR/me/shopping-lists/nova')
     expect(screen.getByText(M.avisoSemPorcoes.replace('{n}', '2'))).toBeInTheDocument()
     expect(screen.getByText(M.algumasIndisponiveis)).toBeInTheDocument()
     // A lista nova vira a opção selecionada (gerar de novo não recria).
@@ -197,7 +197,7 @@ describe('MealPlanShoppingListPanel (ADR-0035 dec.5)', () => {
     expect(
       await screen.findByText(M.listaGeradaSingular.replace('{lista}', 'Mercado'), { exact: false }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: M.abrirLista })).toHaveAttribute('href', '/me/shopping-lists/l1')
+    expect(screen.getByRole('link', { name: M.abrirLista })).toHaveAttribute('href', '/pt-BR/me/shopping-lists/l1')
     expect(screen.queryByText(M.algumasIndisponiveis)).not.toBeInTheDocument()
   })
 

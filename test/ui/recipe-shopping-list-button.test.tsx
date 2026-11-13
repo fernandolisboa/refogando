@@ -97,7 +97,7 @@ describe('RecipeShoppingListButton (#527)', () => {
     renderButton({ originalPorcoes: 4, porcoesReceita: 4 })
 
     const link = screen.getByRole('link', { name: M.convidaEntrarAdicionar })
-    expect(link).toHaveAttribute('href', '/sign-in?returnTo=%2Frecipes%2Fbolo-de-cenoura')
+    expect(link).toHaveAttribute('href', '/pt-BR/sign-in?returnTo=%2Frecipes%2Fbolo-de-cenoura')
     await user.click(link)
     expect(fetchMock).not.toHaveBeenCalled()
   })

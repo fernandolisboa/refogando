@@ -6,7 +6,7 @@
  * `GET/POST /api/me/shopping-lists` e `DELETE /api/me/shopping-lists/[listId]` (ADR-0032).
  */
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { ShoppingCart, Trash2 } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'

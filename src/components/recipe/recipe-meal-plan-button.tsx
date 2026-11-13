@@ -12,7 +12,7 @@
  * contexto ocioso diria 1).
  */
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { CalendarPlus } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'

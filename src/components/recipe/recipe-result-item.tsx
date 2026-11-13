@@ -12,7 +12,7 @@
  * - Thumbnail (#130): foto quando há `imageUrl`; senão um placeholder (ausente ≠ vazio na FOTO,
  *   mas o protótipo mostra sempre a moldura). Selo "✨ gerada por IA" (#132) sobre a foto gerada.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Image as ImageIcon } from 'lucide-react'
 import { classifySection, type Origin, type SearchSection } from '@/domain/recipe'
 import type { RecipeAuthor } from '@/domain/recipe-search-read'

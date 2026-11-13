@@ -5,7 +5,10 @@
  * Conversa no primeiro render. Mantém vivos os links/bookmarks antigos sem 404.
  */
 import { redirect } from 'next/navigation'
+import { canonicalLocale, DEFAULT_LOCALE } from '@/i18n/locale'
 
-export default function ConversationPage() {
-  redirect('/create?mode=conversa')
+// ADR-0061: o destino leva o locale da URL (sem ele, o 302 do proxy escolhia o idioma pelo cookie).
+export default async function ConversationPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale } = await params
+  redirect(`/${canonicalLocale(locale) ?? DEFAULT_LOCALE}/create?mode=conversa`)
 }

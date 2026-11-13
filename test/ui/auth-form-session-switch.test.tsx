@@ -102,7 +102,7 @@ describe('AuthForm segura o SessionLossGuard na troca de conta', () => {
     })
     const { unmount } = renderLogin()
     await submit()
-    expect(router.push).toHaveBeenCalledWith('/')
+    expect(router.push).toHaveBeenCalledWith('/pt-BR')
     expect(reload).not.toHaveBeenCalled()
     unmount()
     expect(reload).toHaveBeenCalledTimes(1)

@@ -130,7 +130,7 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
 
     await user.type(screen.getByRole('searchbox'), '123')
     const cta = await screen.findByRole('link', { name: M.gerarComIa })
-    expect(cta).toHaveAttribute('href', '/create')
+    expect(cta).toHaveAttribute('href', '/pt-BR/create')
   })
 
   it('logado, termo que serve de pedido e COM resultados ⇒ atalho leva ao /create?q=', async () => {
@@ -141,7 +141,7 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
 
     await user.type(screen.getByRole('searchbox'), 'feijoada')
     const link = await screen.findByRole('link', { name: atalho('feijoada') })
-    expect(link).toHaveAttribute('href', '/create?q=feijoada')
+    expect(link).toHaveAttribute('href', '/pt-BR/create?q=feijoada')
     expect(screen.getByText(M.gerarAtalhoLead)).toBeInTheDocument()
   })
 
@@ -153,7 +153,7 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
 
     await user.type(screen.getByRole('searchbox'), 'feijoada')
     const link = await screen.findByRole('link', { name: atalho('feijoada') })
-    expect(link).toHaveAttribute('href', `/sign-in?returnTo=${encodeURIComponent('/create?q=feijoada')}`)
+    expect(link).toHaveAttribute('href', `/pt-BR/sign-in?returnTo=${encodeURIComponent('/create?q=feijoada')}`)
   })
 
   it('termo curto COM resultados ⇒ sem atalho', async () => {

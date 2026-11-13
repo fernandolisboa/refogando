@@ -50,7 +50,7 @@ test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ pag
   await menu.getByRole('menuitem', { name: t.nav.signOut }).click()
   // Sair recarrega a página (ADR-0028, Adendo 2026-10-23): espera a recarga antes do próximo goto.
   await waitForReload(page)
-  await expect(page.locator('[data-tour="conta"] a[href^="/sign-in"]')).toBeAttached()
+  await expect(page.locator('[data-tour="conta"] a[href^="/pt-BR/sign-in"]')).toBeAttached()
   // Deslogado de novo, na home: a faixa volta (vem no HTML e fica).
   await expect(page.locator('#faixa-home-titulo')).toBeVisible()
 
@@ -145,7 +145,8 @@ test('logado percorre todas as abas das seções; Planejar lembra a última aba'
   await waitForHydration(page)
   // No celular o link da seção mora no header oculto (o menu lista as abas direto): confere o destino.
   const planejarLink = page.locator('header nav a[data-tour="nav-planejar"]')
-  await expect(planejarLink).toHaveAttribute('href', ultima.href)
+  // ADR-0061: o Link do app prefixa o locale da página no href.
+  await expect(planejarLink).toHaveAttribute('href', `/pt-BR${ultima.href}`)
   if (!isMobile) {
     await planejarLink.click()
     await expect(page).toHaveURL(new RegExp(`${pathFor(ultima.href)}$`))
@@ -174,7 +175,7 @@ test('sair recarrega esta aba e as outras abertas (nada fica na tela de quem sai
 
   for (const p of [page, outra]) {
     await waitForReload(p)
-    await expect(p.locator('[data-tour="conta"] a[href^="/sign-in"]').first()).toBeAttached()
+    await expect(p.locator('[data-tour="conta"] a[href^="/pt-BR/sign-in"]').first()).toBeAttached()
   }
   await outra.close()
 })

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { UsageGuide } from '@/components/onboarding/usage-guide'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
+import { localizedPageAlternates } from '@/domain/page-seo'
 
 /**
  * "Como usar" (ADR-0039): o guia de uso do app, público e indexável, e o ponto de partida para
@@ -19,6 +20,8 @@ export async function generateMetadata({
   return {
     title: MESSAGES[locale].guia.metaTitulo,
     description: MESSAGES[locale].guia.intro,
+    // ADR-0061: canonical + hreflang (sem ele as duas línguas viravam "cópia sem canônica").
+    alternates: localizedPageAlternates(locale, 'guia'),
   }
 }
 

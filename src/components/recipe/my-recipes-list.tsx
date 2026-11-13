@@ -17,7 +17,7 @@
  * `<h1>` único: o título da página vive na PAGE shell (`/me/recipes`); aqui não há `<h1>`.
  */
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

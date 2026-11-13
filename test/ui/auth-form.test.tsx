@@ -108,7 +108,7 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     await user.type(screen.getByLabelText('Senha'), 'segredo123')
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
-    expect(push).toHaveBeenCalledWith('/')
+    expect(push).toHaveBeenCalledWith('/pt-BR')
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 
@@ -217,7 +217,7 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
       </LocaleProvider>,
     )
     await user.click(screen.getByRole('button', { name: 'Continuar com o Google' }))
-    expect(signInSocial.mock.calls[0][0]).toMatchObject({ provider: 'google', callbackURL: '/me/profile' })
+    expect(signInSocial.mock.calls[0][0]).toMatchObject({ provider: 'google', callbackURL: '/pt-BR/me/profile' })
   })
 
   it('en-US: títulos e rótulos em inglês', () => {
@@ -229,7 +229,7 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
   })
   it('entrar: link "Esqueceu a senha?" pra /forgot-password; criar conta não tem (#469)', () => {
     const { unmount } = renderForm('sign-in')
-    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/forgot-password')
+    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/pt-BR/forgot-password')
     unmount()
     renderForm('sign-up')
     expect(screen.queryByRole('link', { name: 'Esqueceu a senha?' })).not.toBeInTheDocument()
@@ -368,12 +368,12 @@ describe('AuthForm — confirmação de email (#470)', () => {
 
   it('criar conta NÃO loga: mostra "Confira seu email" com o email, sem navegar', async () => {
     await signUpAs('ana@ex.com')
-    expect(signUpEmail.mock.calls[0][0]).toMatchObject({ callbackURL: '/' })
+    expect(signUpEmail.mock.calls[0][0]).toMatchObject({ callbackURL: '/pt-BR' })
     expect(screen.getByRole('heading', { name: 'Confira seu email' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Enviamos um link de confirmação para ana@ex.com')
     // Mesma tela exista ou não conta com o email: o lembrete de "já tem conta" sempre aparece.
     expect(screen.getByText(/Se este email já tiver uma conta, você pode entrar ou redefinir a senha/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/forgot-password')
+    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/pt-BR/forgot-password')
     expect(push).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()
   })
@@ -381,7 +381,7 @@ describe('AuthForm — confirmação de email (#470)', () => {
   it('"Reenviar email" chama sendVerificationEmail e confirma de forma neutra', async () => {
     const user = await signUpAs('ana@ex.com')
     await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
-    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/' })
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/pt-BR' })
     expect(await screen.findByText(/Se houver uma conta não confirmada com este email/)).toBeInTheDocument()
   })
 
@@ -427,7 +427,7 @@ describe('AuthForm — confirmação de email (#470)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Email ou senha incorretos.')
     expect(screen.getByText(/Acabou de criar a conta\? Confirme seu email/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
-    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'bia@ex.com', callbackURL: '/u/ana' })
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'bia@ex.com', callbackURL: '/pt-BR/u/ana' })
     expect(push).not.toHaveBeenCalled()
   })
 
@@ -456,7 +456,7 @@ describe('AuthForm — confirmação de email (#470)', () => {
     await user.type(screen.getByLabelText('Senha'), 'segredo123')
     await user.click(screen.getByRole('button', { name: 'Criar conta' }))
 
-    expect(push).toHaveBeenCalledWith('/')
+    expect(push).toHaveBeenCalledWith('/pt-BR')
     expect(refresh).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('heading', { name: 'Confira seu email' })).not.toBeInTheDocument()
   })

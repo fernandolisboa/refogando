@@ -14,7 +14,7 @@
  * título principal da página (o botão some e o foco cairia no `<body>`).
  */
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'

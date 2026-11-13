@@ -23,7 +23,7 @@
  * (ADR-0015 reserva-os ao eixo catálogo/restrição) — nem nas estrelas.
  */
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'

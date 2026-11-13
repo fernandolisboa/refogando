@@ -27,16 +27,26 @@ import { MESSAGES } from '@/i18n/messages'
 import { getDb } from '@/server/deps'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { loadPublicProfile } from '@/server/user/public-profile'
+import { normalizeHandle } from '@/domain/handle'
+import { localizedPageAlternates } from '@/domain/page-seo'
 
 // #462: título fino do perfil público = `@handle` (único, zero-custo — vem do param da URL, sem um
 // 2º fetch do perfil). Página PÚBLICA/indexável — sem noindex.
+// ADR-0061: canonical + hreflang com o handle NORMALIZADO (minúsculo, como o loader busca): `/u/Ana` e `/u/ana`
+// são a mesma página, e as duas línguas se apontam pelo hreflang. Handle inexistente cai em 404 no render.
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ locale: string; handle: string }>
 }): Promise<Metadata> {
-  const { handle } = await params
-  return { title: `@${handle}` }
+  const { locale: pathLocale, handle } = await params
+  const normalized = normalizeHandle(handle)
+  if (normalized === null) return { title: `@${handle}` }
+  const locale = resolvePageLocale({ urlLocale: pathLocale })
+  return {
+    title: `@${handle}`,
+    alternates: localizedPageAlternates(locale, `u/${encodeURIComponent(normalized)}`),
+  }
 }
 
 export default async function PublicProfilePage({

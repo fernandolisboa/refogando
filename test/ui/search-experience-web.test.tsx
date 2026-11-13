@@ -372,7 +372,7 @@ describe('SearchExperience — modal de importação (#169)', () => {
     // #458: propaga returnTo (pathname mockado como '/').
     expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2F',
+      '/pt-BR/sign-in?returnTo=%2F',
     )
     expect(screen.queryByRole('button', { name: M.importarConfirmar })).not.toBeInTheDocument()
     // Nunca chamou o endpoint de import.
@@ -621,7 +621,7 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
 
     // Os DOIS cartões do mock: Gerar (link pré-preenchido) + Buscar na web (botão).
     const gerar = await screen.findByRole('link', { name: M.gerarComIa })
-    expect(gerar).toHaveAttribute('href', '/create?q=ramen%20vegano%20picante')
+    expect(gerar).toHaveAttribute('href', '/pt-BR/create?q=ramen%20vegano%20picante')
     expect(screen.getByRole('button', { name: M.buscar })).toBeInTheDocument()
     expect(discoveryCalls(fetchMock).length).toBe(0)
   })
@@ -654,7 +654,7 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
     await screen.findByText(M.semResultado)
     expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
     // Gerar segue disponível (sem ?q espúrio).
-    expect(await screen.findByRole('link', { name: M.gerarComIa })).toHaveAttribute('href', '/create')
+    expect(await screen.findByRole('link', { name: M.gerarComIa })).toHaveAttribute('href', '/pt-BR/create')
     expect(discoveryCalls(fetchMock).length).toBe(0)
   })
 
@@ -697,7 +697,7 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
 // ── Visitante com a web LIGADA: `/api/discovery/web` devolve vazio p/ anônimo, então os gatilhos
 // "Buscar na web" viram convite de entrar (com `returnTo` para a própria busca) em vez de um clique morto.
 describe('SearchExperience — visitante com a web ligada', () => {
-  const returnTo = (q: string) => `/sign-in?returnTo=${encodeURIComponent(`/?q=${q}`)}`
+  const returnTo = (q: string) => `/pt-BR/sign-in?returnTo=${encodeURIComponent(`/?q=${q}`)}`
 
   it('V1 — VAZIO: o cartão "Buscar na web" leva a entrar e voltar à busca (sem botão "Buscar")', async () => {
     sessionState = anon()

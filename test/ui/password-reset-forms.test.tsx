@@ -101,7 +101,7 @@ describe('ForgotPasswordForm (#469)', () => {
 
   it('tem o link de volta pro Entrar', () => {
     wrap(<ForgotPasswordForm />)
-    expect(screen.getByRole('link', { name: 'Voltar para entrar' })).toHaveAttribute('href', '/sign-in')
+    expect(screen.getByRole('link', { name: 'Voltar para entrar' })).toHaveAttribute('href', '/pt-BR/sign-in')
   })
 })
 
@@ -110,7 +110,7 @@ describe('ResetPasswordForm (#469)', () => {
     wrap(<ResetPasswordForm token={null} />)
     expect(screen.queryByLabelText('Nova senha')).not.toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('expirou ou já foi usado')
-    expect(screen.getByRole('link', { name: 'Pedir novo link' })).toHaveAttribute('href', '/forgot-password')
+    expect(screen.getByRole('link', { name: 'Pedir novo link' })).toHaveAttribute('href', '/pt-BR/forgot-password')
   })
 
   it('senha curta é barrada no cliente, sem chamar o servidor', async () => {
@@ -127,7 +127,7 @@ describe('ResetPasswordForm (#469)', () => {
     await userEvent.type(screen.getByLabelText('Nova senha'), 'senha-nova-123')
     await userEvent.click(screen.getByRole('button', { name: 'Salvar nova senha' }))
     expect(resetPassword).toHaveBeenCalledWith({ newPassword: 'senha-nova-123', token: 'tok' })
-    expect(push).toHaveBeenCalledWith('/sign-in?reset=1')
+    expect(push).toHaveBeenCalledWith('/pt-BR/sign-in?reset=1')
   })
 
   it.each([

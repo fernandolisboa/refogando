@@ -17,7 +17,7 @@
  * `domain/nav-sections`; aqui só se traduz e desenha.
  */
 import { Fragment, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { MenuIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'

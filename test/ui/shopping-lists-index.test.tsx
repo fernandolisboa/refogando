@@ -92,7 +92,7 @@ describe('ShoppingListsIndex (ADR-0035)', () => {
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Fpt-BR%2Fme%2Fshopping-lists',
+      '/pt-BR/sign-in?returnTo=%2Fpt-BR%2Fme%2Fshopping-lists',
     )
     expect(impl).not.toHaveBeenCalled()
   })
@@ -104,10 +104,10 @@ describe('ShoppingListsIndex (ADR-0035)', () => {
     ])
     renderIndex()
     const mercado = await screen.findByRole('link', { name: /Mercado/ })
-    expect(mercado).toHaveAttribute('href', '/me/shopping-lists/l1')
+    expect(mercado).toHaveAttribute('href', '/pt-BR/me/shopping-lists/l1')
     expect(mercado).toHaveTextContent(M.itemContagem)
     const feira = screen.getByRole('link', { name: /Feira/ })
-    expect(feira).toHaveAttribute('href', '/me/shopping-lists/l2')
+    expect(feira).toHaveAttribute('href', '/pt-BR/me/shopping-lists/l2')
     expect(feira).toHaveTextContent(M.itensContagem.replace('{n}', '7'))
     expect(screen.queryByText(M.vazioIndice, { exact: false })).not.toBeInTheDocument()
   })
@@ -116,7 +116,7 @@ describe('ShoppingListsIndex (ADR-0035)', () => {
     mockFetch([])
     renderIndex()
     expect(await screen.findByText(M.vazioIndice, { exact: false })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.cardapio.titulo })).toHaveAttribute('href', '/me/meal-plan')
+    expect(screen.getByRole('link', { name: ptBR.cardapio.titulo })).toHaveAttribute('href', '/pt-BR/me/meal-plan')
   })
 
   it('criar: POST {name}, limpa o campo e recarrega com a lista nova', async () => {
@@ -131,7 +131,7 @@ describe('ShoppingListsIndex (ADR-0035)', () => {
     await user.type(input, 'Churrasco')
     await user.click(btn)
 
-    expect(await screen.findByRole('link', { name: /Churrasco/ })).toHaveAttribute('href', '/me/shopping-lists/nova')
+    expect(await screen.findByRole('link', { name: /Churrasco/ })).toHaveAttribute('href', '/pt-BR/me/shopping-lists/nova')
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'Churrasco' })
     expect(input).toHaveValue('')
   })

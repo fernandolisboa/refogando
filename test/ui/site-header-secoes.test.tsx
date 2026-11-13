@@ -70,9 +70,9 @@ describe('Header — seções (ADR-0043)', () => {
     renderHeader()
     const links = within(desktopNav()).getAllByRole('link')
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
-      [ptBR.nav.home, '/'],
-      [ptBR.nav.minhasReceitas, '/me/recipes'],
-      [ptBR.nav.planejar, '/me/meal-plan'],
+      [ptBR.nav.home, '/pt-BR'],
+      [ptBR.nav.minhasReceitas, '/pt-BR/me/recipes'],
+      [ptBR.nav.planejar, '/pt-BR/me/meal-plan'],
     ])
   })
 
@@ -111,15 +111,15 @@ describe('Header — seções (ADR-0043)', () => {
       rememberTab('planejar', '/me/pantry')
       rememberTab('minhasReceitas', '/me/saved')
     })
-    expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('href', '/me/pantry')
-    expect(sectionLink(ptBR.nav.minhasReceitas)).toHaveAttribute('href', '/me/saved')
-    expect(sectionLink(ptBR.nav.home)).toHaveAttribute('href', '/')
+    expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('href', '/pt-BR/me/pantry')
+    expect(sectionLink(ptBR.nav.minhasReceitas)).toHaveAttribute('href', '/pt-BR/me/saved')
+    expect(sectionLink(ptBR.nav.home)).toHaveAttribute('href', '/pt-BR')
   })
 
   it('lembrança adulterada no storage é ignorada', () => {
     authMock.current = logged
     window.localStorage.setItem(LAST_TAB_STORAGE_KEY, JSON.stringify({ planejar: 'https://evil.example' }))
     renderHeader()
-    expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('href', '/me/meal-plan')
+    expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('href', '/pt-BR/me/meal-plan')
   })
 })

@@ -9,7 +9,7 @@
  * accent/accent-surface são do selo do Catálogo. Nada disso aqui.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { Image as ImageIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'

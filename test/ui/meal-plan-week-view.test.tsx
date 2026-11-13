@@ -156,7 +156,7 @@ describe('MealPlanWeekView (ADR-0035)', () => {
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Fpt-BR%2Fme%2Fmeal-plan',
+      '/pt-BR/sign-in?returnTo=%2Fpt-BR%2Fme%2Fmeal-plan',
     )
     expect(impl).not.toHaveBeenCalled()
   })
@@ -526,7 +526,7 @@ describe('MealPlanWeekView — "Cozinhei" (ADR-0042)', () => {
     expect(post.url.searchParams.get('locale')).toBe('pt-BR')
     // O cliente não manda nomes nem Receita: o servidor recalcula a partir da entrada.
     expect(post.body).toBeUndefined()
-    expect(screen.getByRole('link', { name: M.verDespensa })).toHaveAttribute('href', '/me/pantry')
+    expect(screen.getByRole('link', { name: M.verDespensa })).toHaveAttribute('href', '/pt-BR/me/pantry')
     // "Cozinhei" não mexe na semana: nada recarrega.
     expect(calls.filter((c) => c.url.pathname === '/api/me/meal-plan').length).toBe(getsBefore)
 

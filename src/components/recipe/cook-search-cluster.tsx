@@ -12,7 +12,7 @@
  * em effect. Apresentacional puro: recebe `cooks` por prop, sem fetch próprio.
  */
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { Avatar } from '@/components/profile/avatar'
 import type { ProfileFollowUser } from '@/domain/recipe-profile-read'

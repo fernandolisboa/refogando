@@ -11,7 +11,7 @@
  * Também grava a última aba das seções pessoais (`rememberTab`), que o link da seção no header usa.
  */
 import { useEffect } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { splitLocalePrefix } from '@/i18n/locale-path'

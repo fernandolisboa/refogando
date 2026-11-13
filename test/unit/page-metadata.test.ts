@@ -23,10 +23,18 @@ describe('page-metadata helpers (#462)', () => {
     expect(meta.robots).toEqual({ index: false, follow: false })
   })
 
-  it('publicPageMetadata: só título (sem noindex — página pública)', async () => {
-    const meta = await publicPageMetadata(params('pt-BR'), (m) => m.nav.signIn)
-    expect(meta.title).toBe(ptBR.nav.signIn)
+  it('publicPageMetadata: título + canonical/hreflang, sem noindex (página pública, ADR-0061)', async () => {
+    const meta = await publicPageMetadata(params('en-US'), (m) => m.nav.signIn, 'sign-in')
+    expect(meta.title).toBe(enUS.nav.signIn)
     expect(meta.robots).toBeUndefined()
+    expect(meta.alternates).toEqual({
+      canonical: 'https://www.refogando.com/en-US/sign-in',
+      languages: {
+        'pt-BR': 'https://www.refogando.com/pt-BR/sign-in',
+        'en-US': 'https://www.refogando.com/en-US/sign-in',
+        'x-default': 'https://www.refogando.com/pt-BR/sign-in',
+      },
+    })
   })
 
   it('locale inválido no path degrada pro default (pt-BR) sem quebrar', async () => {

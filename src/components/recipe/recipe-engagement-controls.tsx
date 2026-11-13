@@ -20,7 +20,7 @@
  * (ADR-0015). O bookmark PREENCHE (`fill`) na cor da marca quando salvo.
  */
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bookmark } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'

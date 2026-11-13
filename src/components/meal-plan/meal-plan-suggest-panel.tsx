@@ -13,7 +13,7 @@
  * storage pode faltar, então todo acesso tem try/catch).
  */
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Sparkles } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'

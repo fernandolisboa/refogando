@@ -312,7 +312,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(dialog).getByRole('heading', { name: m.mantidoTitulo })).toBeInTheDocument()
     // Quem quer apagar uma receita publicada vai a "Minhas receitas" (o rótulo do header) antes.
     const link = within(dialog).getByRole('link', { name: ptBR.nav.minhasReceitas })
-    expect(link).toHaveAttribute('href', '/me/recipes')
+    expect(link).toHaveAttribute('href', '/pt-BR/me/recipes')
     expect(link.parentElement).toHaveTextContent(m.apagarPublicadas.replace('{link}', ptBR.nav.minhasReceitas))
     expect(within(dialog).getByText(m.baixarAntes)).toBeInTheDocument()
     // Foco inicial na ação menos destrutiva.
@@ -559,7 +559,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
   })
 
   describe('sessão antiga (#602)', () => {
-    const REAUTH_HREF = `/sign-in?returnTo=${encodeURIComponent('/me/profile#seus-dados')}`
+    const REAUTH_HREF = `/pt-BR/sign-in?returnTo=${encodeURIComponent('/me/profile#seus-dados')}`
     function withSessionCreatedAt(createdAt: Date): SessionState {
       const s = authed()
       return { ...s, data: { ...(s.data as object), session: { id: 's-1', createdAt } } }
@@ -649,7 +649,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     d.resolve({ status: 500 })
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
     expect(within(dialog).getByRole('button', { name: m.fechar })).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.minhasReceitas })).toHaveAttribute('href', '/me/recipes')
+    expect(within(dialog).getByRole('link', { name: ptBR.nav.minhasReceitas })).toHaveAttribute('href', '/pt-BR/me/recipes')
   })
 
   it('a sessão vira null no meio do pedido (refetch ao voltar online): o diálogo fica e termina a saída', async () => {
@@ -679,7 +679,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(screen.getByRole('button', { name: enUS.seusDados.baixar })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: enUS.seusDados.excluir }))
     const dialog = await screen.findByRole('dialog', { name: enUS.seusDados.dialogoTitulo })
-    expect(within(dialog).getByRole('link', { name: enUS.nav.minhasReceitas })).toHaveAttribute('href', '/me/recipes')
+    expect(within(dialog).getByRole('link', { name: enUS.nav.minhasReceitas })).toHaveAttribute('href', '/en-US/me/recipes')
   })
 
   it('en-US: a saída volta para a home em inglês', async () => {

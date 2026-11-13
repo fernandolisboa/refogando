@@ -98,7 +98,7 @@ describe('RecipeMealPlanButton (ADR-0035 dec.4)', () => {
     renderButton({ originalPorcoes: 4, porcoesReceita: 4 })
     expect(screen.getByRole('link', { name: M.convidaEntrar })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Frecipes%2Fbolo-de-cenoura',
+      '/pt-BR/sign-in?returnTo=%2Frecipes%2Fbolo-de-cenoura',
     )
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(impl).not.toHaveBeenCalled()
@@ -148,7 +148,7 @@ describe('RecipeMealPlanButton (ADR-0035 dec.4)', () => {
     expect(postBody(impl)).toEqual({ recipeId: 'r-1', day: '2026-10-05', slot: 'almoco', porcoes: 4 })
     expect(screen.getByRole('link', { name: M.verCardapio })).toHaveAttribute(
       'href',
-      '/me/meal-plan?semana=2026-10-05',
+      '/pt-BR/me/meal-plan?semana=2026-10-05',
     )
   })
 
@@ -160,7 +160,7 @@ describe('RecipeMealPlanButton (ADR-0035 dec.4)', () => {
     await user.click(await screen.findByRole('button', { name: M.planejar }))
     expect(await screen.findByRole('link', { name: M.verCardapio })).toHaveAttribute(
       'href',
-      '/me/meal-plan?semana=2026-09-28',
+      '/pt-BR/me/meal-plan?semana=2026-09-28',
     )
   })
 

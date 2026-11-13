@@ -20,8 +20,11 @@
  */
 import { useEffect, useRef, type ComponentProps } from 'react'
 import { createPortal } from 'react-dom'
+// eslint-disable-next-line no-restricted-imports -- precisa do `useLinkStatus`; o href passa por `localizeHref` abaixo (ADR-0061)
 import Link, { useLinkStatus } from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useOptionalLocale } from '@/i18n/provider'
+import { localizeHref } from '@/i18n/locale-path'
 import { PrefetchKind } from 'next/dist/client/components/router-reducer/router-reducer-types'
 
 /** Quanto o mouse precisa ficar sobre o link para valer o pré-carregamento (passar por cima a caminho de outro não conta). */
@@ -29,8 +32,11 @@ export const HOVER_DWELL_MS = 100
 
 type RecipeLinkProps = Omit<ComponentProps<typeof Link>, 'href'> & { href: string }
 
-export function RecipeLink({ children, href, onMouseEnter, onMouseLeave, ...props }: RecipeLinkProps) {
+export function RecipeLink({ children, href: rawHref, onMouseEnter, onMouseLeave, ...props }: RecipeLinkProps) {
   const router = useRouter()
+  // ADR-0061: como o `Link` do app, prefixa o locale se o href vier nu (hoje sempre vem de `recipeDetailPath`).
+  const locale = useOptionalLocale()
+  const href = locale ? localizeHref(locale, rawHref) : rawHref
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function cancel() {

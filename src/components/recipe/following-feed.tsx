@@ -23,7 +23,7 @@
  * ninguém OU seguidos-sem-pública) e fica FORA da live region (a CTA não é status efêmero).
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

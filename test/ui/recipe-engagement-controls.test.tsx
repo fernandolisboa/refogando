@@ -178,7 +178,7 @@ describe('RecipeEngagementControls (#62/#362)', () => {
     // #458: propaga returnTo = pathname atual (sanitizado no server pelo safeInternalPath).
     expect(salvarLink).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
+      '/pt-BR/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
     )
 
     expect(screen.queryByRole('button', { name: M.salvar })).toBeNull()

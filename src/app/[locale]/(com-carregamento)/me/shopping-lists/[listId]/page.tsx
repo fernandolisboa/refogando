@@ -10,7 +10,7 @@
  * para o SSR bater com o client — resolvido como em `/me/saved`/`/me/recipes`: precedência
  * cookie → Accept-Language (sem `?locale`).
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { cookies, headers } from 'next/headers'
 import { Container } from '@/components/container'
 import { ShoppingListItemsView } from '@/components/shopping-list/shopping-list-items-view'

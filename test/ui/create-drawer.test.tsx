@@ -633,10 +633,11 @@ describe('CreateDrawer — navegar fecha a gaveta (handoff 74)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
-  it('N4b — link SEM locale para a própria página (o proxy prefixa) também fecha no clique', async () => {
+  it('N4b — link do app para a própria página (o Link prefixa o locale, ADR-0061) também fecha no clique', async () => {
     const user = userEvent.setup()
     sessionState = anon()
-    // "Entrar" aponta para `/sign-in?returnTo=…`, sem locale; a página atual é a `/pt-BR/sign-in`.
+    // "Entrar" aponta para `/pt-BR/sign-in?returnTo=…`; a página atual é a `/pt-BR/sign-in`. (O ramo do link SEM
+    // locale no `create-drawer` fica para `<a>` cru, que não passa pelo `Link` do app.)
     window.history.replaceState(null, '', '/pt-BR/sign-in')
     render(<Harness conversaHint />)
 
@@ -843,7 +844,7 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2Fcreate',
+      '/pt-BR/sign-in?returnTo=%2Fcreate',
     )
     // O chat NÃO está disponível para o Visitante.
     expect(screen.queryByLabelText(CV.inputLabel)).toBeNull()

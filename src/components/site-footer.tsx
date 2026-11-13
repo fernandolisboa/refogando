@@ -8,7 +8,7 @@
  * `setLocale`, em i18n/provider). O tema não vem mais do servidor: o ThemeToggle lê a classe do
  * `<html>`, aplicada pelo script pré-pintura do layout (achado A da auditoria de performance).
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'
 import { Container } from '@/components/container'

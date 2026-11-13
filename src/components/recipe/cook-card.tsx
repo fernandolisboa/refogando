@@ -13,7 +13,7 @@
  * O trilho é só-logado (Modelo B), então usa o default `authed=true`.
  */
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { Sparkles } from 'lucide-react'
 import { Avatar } from '@/components/profile/avatar'
 import { CookFollowButton } from './cook-follow-button'

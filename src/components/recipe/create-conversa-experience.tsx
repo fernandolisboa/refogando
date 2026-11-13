@@ -35,7 +35,7 @@
  * fatia (a reabertura do drawer já zera o estado via `key`).
  */
 import { useEffect } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'

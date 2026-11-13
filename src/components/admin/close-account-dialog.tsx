@@ -17,7 +17,7 @@
  * erro: a mensagem do código (`ERRO`), e o foco no alerta. Sucesso: fecha sem devolver o foco ao gatilho (ele some com
  * a conta inativa) e entrega o resultado à gaveta, que leva o foco ao desfecho e recarrega a lista. ADR-0010: route handler via fetch, nunca Server Action.
  */
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { errorCode } from '@/lib/http-error'

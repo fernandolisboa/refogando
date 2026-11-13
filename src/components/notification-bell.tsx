@@ -21,7 +21,7 @@
  * do link do item, nunca aninhado (link dentro de link é HTML inválido e confunde o leitor de tela).
  */
 import { useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { BellIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
@@ -114,7 +114,7 @@ export function NotificationBell() {
             const itemClass = 'rounded-none focus:bg-brand/[0.06] data-[highlighted]:bg-brand/[0.06]'
             // #460: com alvo → MENUITEM navegável (asChild <Link>): o Radix registra p/ setas/Enter e
             // FECHA a caixa no select (mesmo padrão do AuthSlot). O detalhe já vem `/{locale}/recipes/…`
-            // de `notificationHref`; o perfil é `/u/<handle>` (o proxy prefixa o locale). Sem alvo
+            // de `notificationHref`; o perfil é `/u/<handle>` (o `Link` do app prefixa o locale, ADR-0061). Sem alvo
             // (informativo/ator degradado) → linha estática, texto puro (não é ação, não é foco).
             const main = href ? (
               <DropdownMenuItem asChild className={`${rowClass} ${itemClass}`}>

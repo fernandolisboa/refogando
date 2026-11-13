@@ -9,9 +9,10 @@
  * `revokeSessionsOnPasswordReset`). Erros traduzidos por CHAVE, nunca a mensagem crua do servidor.
  */
 import { useState, type FormEvent } from 'react'
-import Link from 'next/link'
+import Link from '@/components/locale-link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { localizeHref } from '@/i18n/locale-path'
 import { resetPassword } from '@/lib/auth-client'
 import { mapAuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -23,7 +24,7 @@ import { Label } from '@/components/ui/label'
 const MIN_PASSWORD = 8
 
 export function ResetPasswordForm({ token }: { token: string | null }) {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const m = messages.auth
   const router = useRouter()
   const [password, setPassword] = useState('')
@@ -42,7 +43,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     try {
       const { error } = await resetPassword({ newPassword: password, token })
       if (error) setErrorKey(mapAuthError(error))
-      else router.push('/sign-in?reset=1')
+      else router.push(localizeHref(locale, '/sign-in?reset=1'))
     } catch {
       setErrorKey('erroRede')
     } finally {

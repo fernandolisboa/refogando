@@ -211,7 +211,7 @@ describe('Eliminar conta — diálogo', () => {
     expect(alert).toHaveFocus()
     expect(within(alert).getByRole('link', { name: A.usuariosEliminarReautenticarLink })).toHaveAttribute(
       'href',
-      `/sign-in?returnTo=${encodeURIComponent('/admin/users')}`,
+      `/pt-BR/sign-in?returnTo=${encodeURIComponent('/admin/users')}`,
     )
     expect(within(dialog).getByRole('button', { name: A.usuariosEliminarConfirmar })).toBeDisabled()
   })
