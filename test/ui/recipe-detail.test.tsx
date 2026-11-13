@@ -528,3 +528,16 @@ describe('RecipeDetailView (#57)', () => {
     expect(chrome).not.toBe(resolveContentLocale({ pageLocale: chrome, original: 'pt-BR' }))
   })
 })
+
+describe('RecipeDetailView — âncoras dos passos (ADR-0060)', () => {
+  it('com `stepAnchors` cada passo ganha o id `passo-N` (alvo do HowToStep.url); sem ele, nenhum id', () => {
+    const view = baseView()
+    const { rerender } = render(
+      withScale(view, <RecipeDetailView view={view} m={M} locale="pt-BR" stepAnchors />),
+    )
+    expect(screen.getByText('Refogue').closest('li')).toHaveAttribute('id', 'passo-1')
+    expect(screen.getByText('Cozinhe').closest('li')).toHaveAttribute('id', 'passo-2')
+    rerender(withScale(view, <RecipeDetailView view={view} m={M} locale="pt-BR" />))
+    expect(screen.getByText('Refogue').closest('li')).not.toHaveAttribute('id')
+  })
+})

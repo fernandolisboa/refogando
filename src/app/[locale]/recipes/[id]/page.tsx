@@ -263,8 +263,11 @@ export default async function RecipeDetailPage({
       ...(reviewData
         ? { rating: { average: reviewData.average, count: reviewData.count } }
         : {}),
+      cozinhaVocab,
     })
-    const jsonLd = serializeJsonLd(buildRecipeJsonLd(seoInput))
+    // ADR-0060: sem foto visível ⇒ `null` ⇒ a página não emite o JSON-LD Recipe.
+    const recipeLd = buildRecipeJsonLd(seoInput)
+    const jsonLd = recipeLd ? serializeJsonLd(recipeLd) : undefined
     const reviews = serializeReviews(reviewData)
     return (
       <DetailChrome
@@ -505,6 +508,7 @@ function DetailChrome({
           locale={locale}
           cozinhaLabel={cozinhaLabel}
           catalogDisclosure={catalogDisclosure}
+          stepAnchors
         />
       </PortionScaleProvider>
       {/* Avaliações (#363, ADR-0027): gate no sinal INDEPENDENTE `reviews != null` (loadRecipeReviews

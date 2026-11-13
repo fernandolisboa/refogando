@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { getDb } from '@/server/deps'
 import { loadPublicRecipeBySlug } from '@/server/recipe/load'
 import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
-import { buildRecipeMetadata, buildRecipeJsonLd } from '@/domain/recipe-seo'
+import { buildRecipeMetadata, buildRecipeJsonLd, type RecipeSeoInput } from '@/domain/recipe-seo'
 import { seedRecipe, seedTranslation, seedRecipeImage, seedReview } from '../helpers/recipes'
 import { seedUser } from '../helpers/users'
 import { loadRecipeReviews } from '@/server/recipe/review'
@@ -29,6 +29,17 @@ function firstOgImageUrl(meta: ReturnType<typeof buildRecipeMetadata>): unknown 
  */
 
 const BASE = 'https://refogando.com'
+const PHOTO = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
+
+/**
+ * As receitas semeadas aqui não têm foto, e sem foto o builder devolve `null` (ADR-0060). Para os casos que
+ * exercitam o resto do markup, injeta uma foto no input (o input da borda é o que está sob teste).
+ */
+function ldWithPhoto(input: RecipeSeoInput) {
+  const ld = buildRecipeJsonLd({ ...input, imageUrl: input.imageUrl ?? PHOTO })
+  if (ld == null) throw new Error('esperava JSON-LD com foto')
+  return ld
+}
 const db = () => getDb()
 
 describe('loadRecipeSlugMap — slugs POR locale (governa o hreflang)', () => {
@@ -114,12 +125,13 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
     expect(r.index).toBe(true)
     expect(meta.openGraph?.title).toBe('Bolo de Cenoura')
 
-    const ld = buildRecipeJsonLd(input)
+    const ld = ldWithPhoto(input)
     expect(ld['@type']).toBe('Recipe')
     expect(ld.recipeIngredient).toBeUndefined() // sem ingredientes semeados
+    const page = `${BASE}/pt-BR/recipes/bolo-de-cenoura-seo`
     expect(ld.recipeInstructions).toEqual([
-      { '@type': 'HowToStep', text: 'Bata.' },
-      { '@type': 'HowToStep', text: 'Asse.' },
+      { '@type': 'HowToStep', text: 'Bata.', url: `${page}#passo-1` },
+      { '@type': 'HowToStep', text: 'Asse.', url: `${page}#passo-2` },
     ])
     // Sem `rating` passado (nenhuma avaliação semeada) ⇒ SEM aggregateRating (#367).
     expect('aggregateRating' in ld).toBe(false)
@@ -171,7 +183,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       activeCozinhas: ACTIVE,
       rating: { average: reviews!.average, count: reviews!.count },
     })
-    const ld = buildRecipeJsonLd(input)
+    const ld = ldWithPhoto(input)
     expect(ld.aggregateRating).toEqual({
       '@type': 'AggregateRating',
       ratingValue: 4.5,
@@ -207,11 +219,26 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       slugMap,
       eligible: true,
       activeCozinhas: ACTIVE,
+      cozinhaVocab: [{ value: 'brasileira', label: 'Brasileira' }],
     })
-    const ld = buildRecipeJsonLd(input)
+    const ld = ldWithPhoto(input)
     expect(ld.recipeYield).toBe('6')
-    expect(ld.recipeCuisine).toBe('brasileira')
-    expect(ld.recipeCategory).toBe('prato_principal')
+    // ADR-0060: os RÓTULOS que a página mostra, não os tokens crus.
+    expect(ld.recipeCuisine).toBe('Brasileira')
+    expect(ld.recipeCategory).toBe('Prato principal')
+    // Sem o vocabulário (caminho do generateMetadata) a cozinha cai no slug, como antes.
+    const semVocab = buildRecipeSeoInputFromRows({
+      rows: rows!,
+      locale: 'pt-BR',
+      baseUrl: BASE,
+      slugMap,
+      eligible: true,
+      activeCozinhas: ACTIVE,
+    })
+    expect(semVocab.cozinha).toBe('brasileira')
+    // Sem dono mas origin `ai_chat` (não `catalog`) ⇒ NÃO é catálogo editorial: sem autor inventado (ADR-0060).
+    expect(input.editorialCatalog).toBe(false)
+    expect(ld.author).toBeUndefined()
     // só os tokens com RestrictedDiet válido; sem_acucar (lossy) omitido.
     expect(ld.suitableForDiet).toEqual([
       'https://schema.org/GlutenFreeDiet',
@@ -253,7 +280,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       activeCozinhas: ACTIVE, // georgiana AUSENTE do set ativo
     })
     expect(input.cozinha).toBeNull() // gate ACTIVE-only zerou
-    const ld = buildRecipeJsonLd(input)
+    const ld = ldWithPhoto(input)
     expect(ld.recipeCuisine).toBeUndefined()
     // O slug cru não vaza em NENHUM lugar do grafo serializado (contenção total).
     expect(JSON.stringify(ld)).not.toMatch(/georgiana/i)
@@ -296,7 +323,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
     // OG NÃO carrega selo de IA mesmo sendo ai_generated.
     expect(JSON.stringify(meta)).not.toMatch(/gerada por IA|✨/i)
 
-    const ld = buildRecipeJsonLd(input)
+    const ld = ldWithPhoto(input)
     expect(ld.image).toBe('https://abc.public.blob.vercel-storage.com/recipes/foto.webp')
   })
 
@@ -346,8 +373,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
     const meta = buildRecipeMetadata(input)
     expect(String(firstOgImageUrl(meta))).toBe(BRAND_OG)
 
-    // E o JSON-LD não carrega `image` da foto moderada.
-    const ld = buildRecipeJsonLd(input)
-    expect(ld.image).toBeUndefined()
+    // E sem foto visível não há JSON-LD Recipe (ADR-0060): a foto moderada não volta pelo markup.
+    expect(buildRecipeJsonLd(input)).toBeNull()
   })
 })

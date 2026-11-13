@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Decisão 7 emendada por ADR-0060 (2026-11-13):** receita sem foto visível não emite JSON-LD Recipe; `recipeCuisine`/`recipeCategory` levam o rótulo exibido (não o token); entram `keywords` (tags visíveis) e `HowToStep.url` (âncora do passo); o `author` editorial do catálogo passa a sair como `Organization`.
+
 > **Decisão 7 revertida por ADR-0027 (2026-06-30):** o JSON-LD passou a emitir **`aggregateRating`** — não por abandono do princípio ("não forjar rating"), e sim porque agora existe **nota genuína de 1–5★** (Avaliação). O markup usa a **média crua + contagem reais** (nunca o score Bayesiano interno), **visível na página**; o gate de indexação segue inalterado.
 
 O app é bilíngue desde o início (ADR-0001), mas o Locale vivia só no **cookie** e a URL de detalhe era **`/recipes/<uuid>`**. Para perseguir **descoberta orgânica nos dois mercados (pt-BR e en-US)** e **links compartilháveis que passem no crivo** (devs reais como público), a URL e a camada de descoberta mudam:

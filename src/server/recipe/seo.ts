@@ -17,6 +17,8 @@ import type { RecipeSeoInput } from '@/domain/recipe-seo'
 import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { formatIngredientLine } from '@/domain/ingredient-line'
+import { resolveCategoriaLabel } from '@/domain/categoria-label'
+import { resolveCozinhaLabel, type CozinhaOption } from '@/domain/cozinha-label'
 
 /**
  * Mapa `{ locale → slug }` SÓ dos locales que TÊM tradução pública COM slug (slug NÃO-NULL). É o
@@ -73,8 +75,12 @@ export function buildRecipeSeoInputFromRows(args: {
   // SÓ com `count ≥ 1` (senão AUSENTE ⇒ o builder puro não emite `aggregateRating`). Média CRUA —
   // NUNCA o Bayesiano (que só ordena o ranking, #368). Ausente ⇒ receita sem avaliações no grafo.
   rating?: { average: number | null; count: number }
+  // ADR-0060: vocabulário de cozinha JÁ localizado (o mesmo `display` do detalhe) p/ o JSON-LD levar o
+  // RÓTULO que a página mostra ("Japanese"), não o slug cru (`japonesa`). Ausente ⇒ cai no slug (o
+  // `generateMetadata` não precisa: os metadados não usam a cozinha).
+  cozinhaVocab?: readonly CozinhaOption[]
 }): RecipeSeoInput {
-  const { rows, locale, baseUrl, slugMap, eligible, activeCozinhas, rating } = args
+  const { rows, locale, baseUrl, slugMap, eligible, activeCozinhas, rating, cozinhaVocab } = args
   const m = MESSAGES[locale]
 
   // Leitura localizada ANÔNIMA: o mesmo motor puro do detalhe resolve nome/corpo/imagem/autoria/
@@ -123,9 +129,19 @@ export function buildRecipeSeoInputFromRows(args: {
     // grafo/OG. O rótulo VISÍVEL na página de detalhe usa escopo `display` à parte (deprecated ainda
     // renderiza; suggested some via `unknownAsAbsent`) — split deliberado visível-mas-não-indexado
     // (ADR-0025 Dec.5 / ADR-0020). NÃO "consertar" de volta para `view.facets.cozinha` cru.
+    // ADR-0060: o JSON-LD leva o RÓTULO exibido (cozinha do vocabulário, categoria do i18n), igual ao
+    // `RecipeDetailView`; slug sem rótulo carregado ⇒ o próprio slug (defensivo, como antes).
     cozinha:
-      view.facets.cozinha && activeCozinhas.has(view.facets.cozinha) ? view.facets.cozinha : null,
-    categoria: view.facets.categoria,
+      view.facets.cozinha && activeCozinhas.has(view.facets.cozinha)
+        ? resolveCozinhaLabel(cozinhaVocab ?? [], view.facets.cozinha)
+        : null,
+    categoria: resolveCategoriaLabel(m, view.facets.categoria),
+    // ADR-0060: tags visíveis → `keywords`, sem repetir também os TOKENS crus (as tags não são traduzidas: na
+    // página en-US uma tag `japonesa` repetiria a cozinha "Japanese"). Catálogo editorial → `author: Organization`
+    // (sem dono E origin `catalog`, as mesmas duas condições das travas do Curador).
+    tags: view.facets.tags,
+    keywordExclusions: [view.facets.cozinha, view.facets.categoria].filter((v): v is string => !!v),
+    editorialCatalog: rows.recipe.ownerId === null && rows.recipe.origin === 'catalog',
     restricoes: view.facets.restricoes ?? [],
     // `createdAt` é opcional no tipo (vem do select em runtime); ausente ⇒ omite datePublished.
     ...(rows.recipe.createdAt ? { datePublished: rows.recipe.createdAt.toISOString() } : {}),

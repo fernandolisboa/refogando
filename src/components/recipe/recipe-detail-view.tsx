@@ -23,7 +23,7 @@
 import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
 import type { RecipeView } from '@/domain/recipe-read'
-import { isCategoria, isRestricao } from '@/domain/vocabulary'
+import { isRestricao } from '@/domain/vocabulary'
 import { formatDuracao } from '@/domain/tempo'
 import { formatIngredientLine } from '@/domain/ingredient-line'
 import type { Messages } from '@/i18n/messages'
@@ -34,6 +34,8 @@ import { StaleNoticeBanner } from './stale-notice-banner'
 import { RecipePortionScaler } from './recipe-portion-scaler'
 import { RecipeCookMode } from './recipe-cook-mode'
 import { imageSrcSetProps } from '@/domain/image-variants'
+import { recipeStepAnchorId } from '@/domain/recipe-seo'
+import { resolveCategoriaLabel } from '@/domain/categoria-label'
 
 /**
  * Classe-base dos chips de faceta (restrições/tags) — espelha o padrão `BASE` de
@@ -64,6 +66,7 @@ export function RecipeDetailView({
   cozinhaLabel = null,
   catalogDisclosure,
   nameHeadingLevel = 'h1',
+  stepAnchors = false,
 }: {
   view: RecipeView
   m: Messages
@@ -99,6 +102,12 @@ export function RecipeDetailView({
    * documento é o título da região), evitando dois `<h1>`. Só troca a TAG; o estilo do nome é o mesmo.
    */
   nameHeadingLevel?: 'h1' | 'h2'
+  /**
+   * ADR-0060: dá a cada passo o `id` `passo-N` (`recipeStepAnchorId`), alvo do `HowToStep.url` do JSON-LD.
+   * SÓ a página de detalhe liga (um único `RecipeDetailView` no documento); a região "gerar 2" mostra
+   * duas vistas lado a lado e repetiria os ids.
+   */
+  stepAnchors?: boolean
 }) {
   const NameHeading = nameHeadingLevel
   // #169/ADR-0019: a IMPORTADA da web ganha um selo de proveniência PRÓPRIO ("Importada da web"),
@@ -116,8 +125,7 @@ export function RecipeDetailView({
   // type-guard (sem `as`); `?? valor` é defensivo p/ valor fora do enum. A cozinha (#317)
   // NÃO é resolvida aqui: chega já localizada via prop `cozinhaLabel` (leitor data-driven).
   const categoria = view.facets.categoria
-  const categoriaLabel =
-    categoria == null ? null : isCategoria(categoria) ? m.categoriaLabel[categoria] : categoria
+  const categoriaLabel = resolveCategoriaLabel(m, categoria)
 
   // Ingredientes vêm ordenados por `ordem`; mantemos robusto com um sort estável (cópia).
   // Já formata cada linha e DESCARTA itens vazios (qtd/unidade/rawText todos nulos →
@@ -265,7 +273,11 @@ export function RecipeDetailView({
           </div>
           <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
             {view.body.passos.map((passo, i) => (
-              <li key={i} className="text-pretty pl-1">
+              <li
+                key={i}
+                id={stepAnchors ? recipeStepAnchorId(i) : undefined}
+                className="scroll-mt-24 text-pretty pl-1"
+              >
                 {passo}
               </li>
             ))}
