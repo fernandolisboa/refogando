@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Consequência "links internos" completada por ADR-0061 (2026-11-13):** link interno nu passava pelo 302 do proxy e trocava de idioma pelo cookie; o `Link` do app (`@/components/locale-link`) prefixa o locale da página, e toda página pública indexável declara canonical + hreflang (origem fixa em `src/domain/page-seo.ts`).
+
 > **Decisão 7 emendada por ADR-0060 (2026-11-13):** receita sem foto visível não emite JSON-LD Recipe; `recipeCuisine`/`recipeCategory` levam o rótulo exibido (não o token); entram `keywords` (tags visíveis) e `HowToStep.url` (âncora do passo); o `author` editorial do catálogo passa a sair como `Organization`.
 
 > **Decisão 7 revertida por ADR-0027 (2026-06-30):** o JSON-LD passou a emitir **`aggregateRating`** — não por abandono do princípio ("não forjar rating"), e sim porque agora existe **nota genuína de 1–5★** (Avaliação). O markup usa a **média crua + contagem reais** (nunca o score Bayesiano interno), **visível na página**; o gate de indexação segue inalterado.
@@ -68,4 +70,4 @@ O app é bilíngue desde o início (ADR-0001), mas o Locale vivia só no **cooki
 
 ## Atualização (2026-10-23, #611) — páginas legais com canonical e hreflang
 
-`/termos`, `/privacidade` e `/seus-direitos` declaram `alternates` (canonical + `pt-BR`/`en-US`/`x-default` na versão do `DEFAULT_LOCALE`, o mesmo esquema do sitemap, `staticPathHreflang`). A origem é fixa (`https://www.refogando.com`, `src/domain/legal-pages-seo.ts`) e não a `getBaseUrlFromEnv`: as três são ISR, o `generateMetadata` roda no build, e o build do CI não tem a env. O sitemap continua pela env, que em produção dá o mesmo domínio; trocar o domínio público pede trocar os dois. Os links internos para essas páginas e para `/guia` levam o prefixo do idioma (`localePrefixedPath`).
+`/termos`, `/privacidade` e `/seus-direitos` declaram `alternates` (canonical + `pt-BR`/`en-US`/`x-default` na versão do `DEFAULT_LOCALE`, o mesmo esquema do sitemap, `staticPathHreflang`). A origem é fixa (`https://www.refogando.com`, `src/domain/page-seo.ts` desde o ADR-0061; antes `legal-pages-seo.ts`) e não a `getBaseUrlFromEnv`: as três são ISR, o `generateMetadata` roda no build, e o build do CI não tem a env. O sitemap continua pela env, que em produção dá o mesmo domínio; trocar o domínio público pede trocar os dois. Os links internos para essas páginas e para `/guia` levam o prefixo do idioma (`localePrefixedPath`).

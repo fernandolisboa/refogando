@@ -633,10 +633,11 @@ describe('CreateDrawer — navegar fecha a gaveta (handoff 74)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
-  it('N4b — link SEM locale para a própria página (o proxy prefixa) também fecha no clique', async () => {
+  it('N4b — link do app para a própria página (o Link prefixa o locale, ADR-0061) também fecha no clique', async () => {
     const user = userEvent.setup()
     sessionState = anon()
-    // "Entrar" aponta para `/sign-in?returnTo=…`, sem locale; a página atual é a `/pt-BR/sign-in`.
+    // "Entrar" aponta para `/pt-BR/sign-in?returnTo=…`; a página atual é a `/pt-BR/sign-in`. (O ramo do link SEM
+    // locale no `create-drawer` fica para `<a>` cru, que não passa pelo `Link` do app.)
     window.history.replaceState(null, '', '/pt-BR/sign-in')
     render(<Harness conversaHint />)
 

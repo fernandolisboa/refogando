@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Search } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
+import { localizeHref } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -586,7 +587,7 @@ export function UsersSection() {
 
                 {selected.status === 'ativa' || selected.status === 'nao-confirmada' ? (
                   <a
-                    href={`/u/${selected.handle}`}
+                    href={localizeHref(locale, `/u/${selected.handle}`)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-ink hover:underline"

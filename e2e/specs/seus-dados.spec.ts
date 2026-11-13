@@ -43,7 +43,7 @@ test('baixa os dados e exclui a conta pelo perfil', async ({ page, account }) =>
 
   await expect(page).toHaveURL(/\/pt-BR$/)
   await expect(page.getByText(t.seusDados.excluida)).toBeVisible()
-  await expect(page.locator('[data-tour="conta"] a[href^="/sign-in"]')).toBeAttached()
+  await expect(page.locator('[data-tour="conta"] a[href^="/pt-BR/sign-in"]')).toBeAttached()
   const session = await page.request.get('/api/auth/get-session')
   expect(await session.json()).toBeNull()
 })

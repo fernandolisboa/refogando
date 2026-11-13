@@ -129,7 +129,8 @@ export function decideLocaleRedirect(input: {
  *
  * Fica igual: link externo (`https://…`, `//host`, `mailto:`), âncora/relativo (`#x`, `?x`, `x/y`), o que já tem
  * locale (mesmo com case errado: o proxy normaliza com 301 sem trocar o idioma) e o que o proxy não prefixa
- * (`/api`, `/_next`, arquivo com extensão — o mesmo `matcher` de `src/proxy.ts`).
+ * (`/api`, `/_next`, arquivo com extensão — uma aproximação do `matcher` de `src/proxy.ts`, que pula qualquer
+ * caminho com ponto e tudo que começa com `api`; nenhuma página do app cai na diferença).
  */
 export function localizeHref(locale: Locale, href: string): string {
   if (!href.startsWith('/') || href.startsWith('//')) return href

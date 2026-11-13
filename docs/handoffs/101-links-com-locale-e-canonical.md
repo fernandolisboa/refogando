@@ -37,6 +37,8 @@ from being indexed").
 
 ## 5. Landmines
 
-- `RecipeLink` continua no `next/link` direto (usa `useLinkStatus`); o `href` dele já vem de `recipeDetailPath`.
+- `RecipeLink` continua no `next/link` direto (usa `useLinkStatus`, com `eslint-disable` na linha); o `href` passa
+  por `localizeHref` como no wrapper.
 - `returnTo` dentro da query continua nu de propósito (é um caminho para depois do login, e o proxy resolve).
-- `redirect('/sign-in')` nos gates do admin continua nu: o admin é `Disallow` no robots e só vê quem está logado.
+- `redirect('/sign-in')` nos gates do admin continua nu (o `SectionGate` não recebe o locale): o admin é `Disallow`
+  no robots e só vê quem está logado. `<a>` cru não passa pelo lint: use `localizeHref`.

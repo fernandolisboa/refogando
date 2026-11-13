@@ -57,7 +57,7 @@ const eslintConfig = [
     // página (o Google via "Página com redirecionamento" e o /en-US caía no /pt-BR). O `Link` de
     // `@/components/locale-link` prefixa o href com o locale da página.
     files: ['src/**'],
-    ignores: ['src/components/locale-link.tsx', 'src/components/recipe/recipe-link.tsx'],
+    ignores: ['src/components/locale-link.tsx'],
     rules: {
       'no-restricted-imports': [
         'error',

@@ -25,7 +25,9 @@ uma canônica diferente da do usuário". Sem acesso ao relatório, conferimos o 
    por `localizeHref` (`src/i18n/locale-path.ts`) com o locale do `LocaleProvider`. Fica intacto o que já tem
    locale, o externo, âncora/relativo, `/api`, `/_next` e arquivo com extensão (o mesmo `matcher` do proxy).
    O ESLint barra `import Link from 'next/link'` fora do wrapper e do `RecipeLink` (que já recebe o caminho
-   prefixado). Os três `router.push` com caminho nu também passaram a prefixar.
+   prefixado; mesmo assim ele passa o href por `localizeHref`). Também passaram a prefixar: os três `router.push`
+   com caminho nu, o destino do login (`router.push` e o `callbackURL` do `AuthForm`), o redirect legado
+   `/conversation` e o `<a>` cru do perfil no Console.
    Rejeitado: corrigir cada `href` à mão. O próximo link nasceria nu de novo.
 2. **Toda página pública indexável declara canonical + hreflang**, com a origem fixa de #611 (`CANONICAL_ORIGIN`
    em `src/domain/page-seo.ts`, generalizado de `legal-pages-seo.ts`): cada idioma é canônico de si mesmo e
