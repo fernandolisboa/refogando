@@ -17,7 +17,7 @@ import type { RecipeSeoInput } from '@/domain/recipe-seo'
 import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { formatIngredientLine } from '@/domain/ingredient-line'
-import { isCategoria } from '@/domain/vocabulary'
+import { resolveCategoriaLabel } from '@/domain/categoria-label'
 import { resolveCozinhaLabel, type CozinhaOption } from '@/domain/cozinha-label'
 
 /**
@@ -135,15 +135,13 @@ export function buildRecipeSeoInputFromRows(args: {
       view.facets.cozinha && activeCozinhas.has(view.facets.cozinha)
         ? resolveCozinhaLabel(cozinhaVocab ?? [], view.facets.cozinha)
         : null,
-    categoria:
-      view.facets.categoria == null
-        ? null
-        : isCategoria(view.facets.categoria)
-          ? m.categoriaLabel[view.facets.categoria]
-          : view.facets.categoria,
-    // ADR-0060: tags visíveis → `keywords`; catálogo editorial (sem dono) → `author: Organization`.
+    categoria: resolveCategoriaLabel(m, view.facets.categoria),
+    // ADR-0060: tags visíveis → `keywords`, sem repetir também os TOKENS crus (as tags não são traduzidas: na
+    // página en-US uma tag `japonesa` repetiria a cozinha "Japanese"). Catálogo editorial → `author: Organization`
+    // (sem dono E origin `catalog`, as mesmas duas condições das travas do Curador).
     tags: view.facets.tags,
-    editorialCatalog: rows.recipe.ownerId === null,
+    keywordExclusions: [view.facets.cozinha, view.facets.categoria].filter((v): v is string => !!v),
+    editorialCatalog: rows.recipe.ownerId === null && rows.recipe.origin === 'catalog',
     restricoes: view.facets.restricoes ?? [],
     // `createdAt` é opcional no tipo (vem do select em runtime); ausente ⇒ omite datePublished.
     ...(rows.recipe.createdAt ? { datePublished: rows.recipe.createdAt.toISOString() } : {}),

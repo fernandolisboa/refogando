@@ -340,6 +340,7 @@ describe('serializeJsonLd — string segura pro <script> (XSS de </script>)', ()
       field: 'image',
       build: () => ldOf(baseInput({ imageUrl: `https://x/${PAYLOAD}.webp` })),
     },
+    { field: 'keywords', build: () => ldOf(baseInput({ tags: [`t ${PAYLOAD}`] })) },
     {
       field: 'isBasedOn',
       build: () =>
@@ -448,6 +449,19 @@ describe('buildRecipeJsonLd — correções do Search Console (ADR-0060)', () =>
       }),
     )
     expect(ld.keywords).toBe('rápido, festa junina')
+  })
+
+  it('keywords também descarta os TOKENS crus (página en-US: tag `japonesa` × cozinha "Japanese") e tira vírgula da tag', () => {
+    const ld = ldOf(
+      baseInput({
+        locale: 'en-US',
+        cozinha: 'Japanese',
+        categoria: 'Main course',
+        keywordExclusions: ['japonesa', 'prato_principal'],
+        tags: ['japonesa', 'prato principal', 'sal, pimenta'],
+      }),
+    )
+    expect(ld.keywords).toBe('sal pimenta')
   })
 
   it('sem tags (ou só tags que repetem cozinha/categoria) ⇒ sem keywords', () => {

@@ -23,7 +23,7 @@
 import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
 import type { RecipeView } from '@/domain/recipe-read'
-import { isCategoria, isRestricao } from '@/domain/vocabulary'
+import { isRestricao } from '@/domain/vocabulary'
 import { formatDuracao } from '@/domain/tempo'
 import { formatIngredientLine } from '@/domain/ingredient-line'
 import type { Messages } from '@/i18n/messages'
@@ -35,6 +35,7 @@ import { RecipePortionScaler } from './recipe-portion-scaler'
 import { RecipeCookMode } from './recipe-cook-mode'
 import { imageSrcSetProps } from '@/domain/image-variants'
 import { recipeStepAnchorId } from '@/domain/recipe-seo'
+import { resolveCategoriaLabel } from '@/domain/categoria-label'
 
 /**
  * Classe-base dos chips de faceta (restrições/tags) — espelha o padrão `BASE` de
@@ -124,8 +125,7 @@ export function RecipeDetailView({
   // type-guard (sem `as`); `?? valor` é defensivo p/ valor fora do enum. A cozinha (#317)
   // NÃO é resolvida aqui: chega já localizada via prop `cozinhaLabel` (leitor data-driven).
   const categoria = view.facets.categoria
-  const categoriaLabel =
-    categoria == null ? null : isCategoria(categoria) ? m.categoriaLabel[categoria] : categoria
+  const categoriaLabel = resolveCategoriaLabel(m, categoria)
 
   // Ingredientes vêm ordenados por `ordem`; mantemos robusto com um sort estável (cópia).
   // Já formata cada linha e DESCARTA itens vazios (qtd/unidade/rawText todos nulos →

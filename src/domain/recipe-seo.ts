@@ -73,6 +73,8 @@ export type RecipeSeoInput = {
    * `recipeCuisine` em `keywords`). Vazio ⇒ sem `keywords`.
    */
   tags?: ReadonlyArray<string>
+  /** Termos que também não podem ir para `keywords` além dos rótulos de cozinha/categoria: os tokens crus. */
+  keywordExclusions?: ReadonlyArray<string>
   /** Atribuição à FONTE externa (#169, web_imported) — vira `isBasedOn` no JSON-LD. */
   source?: { url: string; name?: string }
   /** Nome da marca p/ rótulos do OG (publisher), do catálogo de mensagens do locale. */
@@ -326,12 +328,15 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd | null {
   // keywords (ADR-0060): as tags VISÍVEIS, sem repetir cozinha/categoria (regra do Google) nem duplicar.
   if (input.tags && input.tags.length > 0) {
     const excluded = new Set(
-      [input.cozinha, input.categoria].filter((v): v is string => !!v).map(keywordKey),
+      [input.cozinha, input.categoria, ...(input.keywordExclusions ?? [])]
+        .filter((v): v is string => !!v)
+        .map(keywordKey),
     )
     const seen = new Set<string>()
     const keywords: string[] = []
     for (const raw of input.tags) {
-      const tag = raw.trim()
+      // Vírgula dentro da tag a partiria em duas no `keywords` (separado por vírgula).
+      const tag = raw.replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
       const key = keywordKey(tag)
       if (key === '' || excluded.has(key) || seen.has(key)) continue
       seen.add(key)

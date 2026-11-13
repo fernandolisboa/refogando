@@ -30,9 +30,12 @@ e não pode ser "Step 1"; `HowToStep.url` é o link direto para o passo, por exe
    receita ganha foto, o markup volta sozinho.
 2. **Catálogo assina como a marca.** Receita sem dono (`owner_id IS NULL`) e não importada ⇒ `author:
    Organization` com o nome da marca. Importada da web segue só com `isBasedOn`: não sabemos quem escreveu o
-   original. Comunidade sem autor visível fica sem autor.
+   original. Comunidade sem autor visível fica sem autor. É a primeira implementação do "`author` (editorial p/
+   `catalog`)" que o ADR-0020 dec. 7 já previa; a condição é `owner_id IS NULL` **e** `origin = 'catalog'`, as
+   mesmas das travas do Curador.
 3. **`keywords` = tags visíveis** (`recipe_tag`, os chips "Tags" do detalhe), sem as que repetem a cozinha ou a
-   categoria (comparação sem acento, caixa e `_`) e sem duplicatas. Sem tags ⇒ sem `keywords`. Nada é gerado
+   categoria, rótulo ou token cru (as tags não são traduzidas; comparação sem acento, caixa e `_`), sem
+   duplicatas e sem vírgula dentro da tag (separador do campo). Sem tags ⇒ sem `keywords`. Nada é gerado
    para preencher o campo.
 4. **`HowToStep.url` = âncora do passo.** O detalhe público dá a cada `<li>` do modo de preparo o id `passo-N`
    (`recipeStepAnchorId`, fonte única) e o JSON-LD aponta `url` para `<canonical>#passo-N`. Só a página de detalhe

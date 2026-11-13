@@ -236,9 +236,9 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       activeCozinhas: ACTIVE,
     })
     expect(semVocab.cozinha).toBe('brasileira')
-    // Sem dono (`seedRecipe` sem ownerId) = catálogo editorial ⇒ a marca assina como Organization (ADR-0060).
-    expect(input.editorialCatalog).toBe(true)
-    expect(ld.author).toEqual({ '@type': 'Organization', name: 'Refogando' })
+    // Sem dono mas origin `ai_chat` (não `catalog`) ⇒ NÃO é catálogo editorial: sem autor inventado (ADR-0060).
+    expect(input.editorialCatalog).toBe(false)
+    expect(ld.author).toBeUndefined()
     // só os tokens com RestrictedDiet válido; sem_acucar (lossy) omitido.
     expect(ld.suitableForDiet).toEqual([
       'https://schema.org/GlutenFreeDiet',
