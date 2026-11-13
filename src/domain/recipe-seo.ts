@@ -55,12 +55,24 @@ export type RecipeSeoInput = {
    * presente (a página só renderiza por slug). Ex. acervo só-pt: `{ 'pt-BR': 'bolo' }`.
    */
   slugsByLocale: Partial<Record<Locale, string>>
-  /** Foto VISÍVEL da receita (URL absoluta do blob). Ausente ⇒ card de marca no OG, sem image no LD. */
+  /** Foto VISÍVEL da receita (URL absoluta do blob). Ausente ⇒ card de marca no OG e SEM JSON-LD Recipe (ADR-0060). */
   imageUrl?: string
   /** Imagem é gerada por IA? NÃO reflete no OG (#232 — a imagem é vitrine no card); só dado de in-app. */
   imageAiGenerated?: boolean
   /** Autoria humana (#129) — vira `author: Person` no JSON-LD. Ausente p/ Catálogo/importada. */
   author?: { name: string; handle: string }
+  /**
+   * Receita do CATÁLOGO editorial (`owner_id IS NULL`, ADR-0011) — quem escreve é a própria marca, então o
+   * JSON-LD credita `author: Organization` = `brandName` (ADR-0060). Ausente/false ⇒ sem esse crédito
+   * (comunidade sem autor visível e importada NÃO ganham autor inventado).
+   */
+  editorialCatalog?: boolean
+  /**
+   * Tags VISÍVEIS da receita (`recipe_tag`, chips "Tags" do detalhe) → `keywords` (ADR-0060). O builder
+   * descarta as que repetem a cozinha/categoria (o Google pede para não repetir `recipeCategory`/
+   * `recipeCuisine` em `keywords`). Vazio ⇒ sem `keywords`.
+   */
+  tags?: ReadonlyArray<string>
   /** Atribuição à FONTE externa (#169, web_imported) — vira `isBasedOn` no JSON-LD. */
   source?: { url: string; name?: string }
   /** Nome da marca p/ rótulos do OG (publisher), do catálogo de mensagens do locale. */
@@ -70,9 +82,11 @@ export type RecipeSeoInput = {
   /** Tempo total em minutos (#262, ADR-0023 dec.4) — `tempo_total_min` → `totalTime` (ISO 8601).
    *  Ausente ⇒ omitido. NÃO emitimos `prepTime`/`cookTime` (sem split preparo-vs-cozimento honesto). */
   tempoTotalMin?: number | null
-  /** Cozinha (#234) — token de faceta → `recipeCuisine`. Ausente ⇒ omitido. */
+  /** Cozinha (#234) — RÓTULO exibido no detalhe, no locale corrente (ADR-0060; antes ia o slug cru,
+   *  ex. `japonesa` na página em inglês) → `recipeCuisine`. Ausente ⇒ omitido. */
   cozinha?: string | null
-  /** Categoria (#234) — token de faceta → `recipeCategory`. Ausente ⇒ omitido. */
+  /** Categoria (#234) — RÓTULO exibido no detalhe, no locale corrente (ADR-0060; antes ia o token cru,
+   *  ex. `prato_principal`) → `recipeCategory`. Ausente ⇒ omitido. */
   categoria?: string | null
   /** Restrições (#234) — tokens de faceta → `suitableForDiet` (só os que mapeiam p/ `RestrictedDiet`). */
   restricoes?: ReadonlyArray<string>
@@ -164,8 +178,12 @@ export type RecipeJsonLd = {
   inLanguage: string
   image?: string
   recipeIngredient?: string[]
-  recipeInstructions?: Array<{ '@type': 'HowToStep'; text: string }>
-  author?: { '@type': 'Person'; name: string }
+  /** Passos; `url` = âncora do passo na página (`#passo-N`, ADR-0060) quando há URL canônica. Sem
+   *  `name`: o Google pede uma frase-resumo do passo (não "Passo 1"), e não temos uma honesta. */
+  recipeInstructions?: Array<{ '@type': 'HowToStep'; text: string; url?: string }>
+  author?: { '@type': 'Person' | 'Organization'; name: string }
+  /** Tags visíveis da receita, separadas por vírgula (ADR-0060). */
+  keywords?: string
   isBasedOn?: string
   publisher?: { '@type': 'Organization'; name: string }
   /** URL canônica da Receita — `mainEntityOfPage`. */
@@ -225,6 +243,26 @@ export function minutosParaISO8601(minutos: number | null | undefined): string |
 }
 
 /**
+ * Id da âncora do passo `index` (0-based) na página de detalhe: `passo-1`, `passo-2`… FONTE ÚNICA — o
+ * `<li id>` do modo de preparo (`RecipeDetailView` com `stepAnchors`) e o `HowToStep.url` do JSON-LD
+ * (ADR-0060) usam esta função, então o link do passo nunca aponta para uma âncora que não existe.
+ */
+export function recipeStepAnchorId(index: number): string {
+  return `passo-${index + 1}`
+}
+
+/** Normaliza p/ comparar tag × cozinha/categoria: sem acento, minúsculo, `_`/`-` viram espaço. */
+function keywordKey(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
  * #234 — objeto JSON-LD `schema.org/Recipe` PÚBLICO da Receita. Conteúdo no idioma do locale
  * corrente (name/description/ingredientes/passos vêm já resolvidos). `image` = a foto VISÍVEL (URL
  * absoluta). Proveniência: `author: Person` quando há dono humano; `isBasedOn` (a fonte externa)
@@ -239,8 +277,16 @@ export function minutosParaISO8601(minutos: number | null | undefined): string |
  * cozinha, `recipeCategory`←categoria, `datePublished`←createdAt, `suitableForDiet`←restrições (só as
  * que mapeiam p/ `RestrictedDiet` válido — lossy é OMITIDA, nunca enum inválido). Cada chave sai SÓ
  * quando há dado.
+ *
+ * ADR-0060 (Search Console, 2026-11): SEM imagem visível ⇒ `null` (a página NÃO emite o JSON-LD Recipe).
+ * `image` é obrigatório para o resultado de receita, e a alternativa (o card de marca) não é uma "imagem
+ * do prato pronto": seria structured data enganoso. A receita continua indexável como página comum; ganha
+ * o markup quando ganhar foto. Também: catálogo ⇒ `author: Organization` (a marca), `keywords` ← tags
+ * visíveis, `HowToStep.url` ← âncora do passo.
  */
-export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
+export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd | null {
+  // Sem foto visível (ausente ou moderada) ⇒ nada de Recipe no grafo (ver ADR-0060 acima).
+  if (!input.imageUrl) return null
   const { locale, baseUrl, name, brandName } = input
   const slug = input.slugsByLocale[locale]
   const description =
@@ -254,11 +300,17 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
     publisher: { '@type': 'Organization', name: brandName },
   }
   if (description) ld.description = description
-  if (slug) ld.mainEntityOfPage = absoluteRecipeDetailUrl(baseUrl, locale, slug)
-  if (input.imageUrl) ld.image = input.imageUrl
+  const pageUrl = slug ? absoluteRecipeDetailUrl(baseUrl, locale, slug) : undefined
+  if (pageUrl) ld.mainEntityOfPage = pageUrl
+  ld.image = input.imageUrl
   if (input.ingredients.length > 0) ld.recipeIngredient = [...input.ingredients]
   if (input.steps.length > 0) {
-    ld.recipeInstructions = input.steps.map((text) => ({ '@type': 'HowToStep', text }))
+    // `url` só com URL canônica (o fragmento aponta para o `<li id>` do passo na própria página).
+    ld.recipeInstructions = input.steps.map((text, i) =>
+      pageUrl
+        ? { '@type': 'HowToStep', text, url: `${pageUrl}#${recipeStepAnchorId(i)}` }
+        : { '@type': 'HowToStep', text },
+    )
   }
   // Campos da ADR-0020 dec.7 mapeados da view (dados JÁ carregados — sem query nova). Cada chave SÓ
   // sai quando há dado (omite chave vazia — "ausente ≠ vazio", espelha as facetas da view).
@@ -271,6 +323,22 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
   }
   if (input.cozinha) ld.recipeCuisine = input.cozinha
   if (input.categoria) ld.recipeCategory = input.categoria
+  // keywords (ADR-0060): as tags VISÍVEIS, sem repetir cozinha/categoria (regra do Google) nem duplicar.
+  if (input.tags && input.tags.length > 0) {
+    const excluded = new Set(
+      [input.cozinha, input.categoria].filter((v): v is string => !!v).map(keywordKey),
+    )
+    const seen = new Set<string>()
+    const keywords: string[] = []
+    for (const raw of input.tags) {
+      const tag = raw.trim()
+      const key = keywordKey(tag)
+      if (key === '' || excluded.has(key) || seen.has(key)) continue
+      seen.add(key)
+      keywords.push(tag)
+    }
+    if (keywords.length > 0) ld.keywords = keywords.join(', ')
+  }
   if (input.datePublished) ld.datePublished = input.datePublished
   // aggregateRating (#367, ADR-0027 dec.6): SÓ com ≥1 avaliação não-moderada (contagem REAL, já
   // filtrada `moderated_at IS NULL` pela borda) E receita indexável — o MESMO gate noindex de
@@ -295,12 +363,15 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
       .filter((d): d is RestrictedDiet => d != null)
     if (diets.length > 0) ld.suitableForDiet = diets
   }
-  // Proveniência (mutuamente exclusiva, espelha a view): importada ⇒ fonte externa (isBasedOn);
-  // senão ⇒ autoria humana (Person) quando há dono. Catálogo sem dono ⇒ nenhum dos dois (só publisher).
+  // Proveniência (mutuamente exclusiva, espelha a view): importada ⇒ fonte externa (isBasedOn), sem
+  // autor (não sabemos quem escreveu o original); senão ⇒ autoria humana (Person) quando há dono;
+  // Catálogo editorial ⇒ a marca como `Organization` (ADR-0060: quem escreve o catálogo é o Refogando).
   if (input.source) {
     ld.isBasedOn = input.source.url
   } else if (input.author) {
     ld.author = { '@type': 'Person', name: input.author.name }
+  } else if (input.editorialCatalog) {
+    ld.author = { '@type': 'Organization', name: brandName }
   }
   return ld
 }

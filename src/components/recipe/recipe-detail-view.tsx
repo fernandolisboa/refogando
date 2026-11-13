@@ -34,6 +34,7 @@ import { StaleNoticeBanner } from './stale-notice-banner'
 import { RecipePortionScaler } from './recipe-portion-scaler'
 import { RecipeCookMode } from './recipe-cook-mode'
 import { imageSrcSetProps } from '@/domain/image-variants'
+import { recipeStepAnchorId } from '@/domain/recipe-seo'
 
 /**
  * Classe-base dos chips de faceta (restrições/tags) — espelha o padrão `BASE` de
@@ -64,6 +65,7 @@ export function RecipeDetailView({
   cozinhaLabel = null,
   catalogDisclosure,
   nameHeadingLevel = 'h1',
+  stepAnchors = false,
 }: {
   view: RecipeView
   m: Messages
@@ -99,6 +101,12 @@ export function RecipeDetailView({
    * documento é o título da região), evitando dois `<h1>`. Só troca a TAG; o estilo do nome é o mesmo.
    */
   nameHeadingLevel?: 'h1' | 'h2'
+  /**
+   * ADR-0060: dá a cada passo o `id` `passo-N` (`recipeStepAnchorId`), alvo do `HowToStep.url` do JSON-LD.
+   * SÓ a página de detalhe liga (um único `RecipeDetailView` no documento); a região "gerar 2" mostra
+   * duas vistas lado a lado e repetiria os ids.
+   */
+  stepAnchors?: boolean
 }) {
   const NameHeading = nameHeadingLevel
   // #169/ADR-0019: a IMPORTADA da web ganha um selo de proveniência PRÓPRIO ("Importada da web"),
@@ -265,7 +273,11 @@ export function RecipeDetailView({
           </div>
           <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
             {view.body.passos.map((passo, i) => (
-              <li key={i} className="text-pretty pl-1">
+              <li
+                key={i}
+                id={stepAnchors ? recipeStepAnchorId(i) : undefined}
+                className="scroll-mt-24 text-pretty pl-1"
+              >
                 {passo}
               </li>
             ))}

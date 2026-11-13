@@ -4,6 +4,7 @@ import {
   buildRecipeJsonLd,
   serializeJsonLd,
   minutosParaISO8601,
+  recipeStepAnchorId,
   type RecipeSeoInput,
 } from '@/domain/recipe-seo'
 
@@ -36,8 +37,17 @@ function baseInput(over: Partial<RecipeSeoInput> = {}): RecipeSeoInput {
     steps: ['Bata os líquidos.', 'Misture os secos.', 'Asse por 40 minutos.'],
     slugsByLocale: { 'pt-BR': 'bolo-de-cenoura', 'en-US': 'carrot-cake' },
     brandName: 'Refogando',
+    // ADR-0060: sem imagem não há JSON-LD Recipe — a fixture-base tem foto; os testes do "sem foto" a tiram.
+    imageUrl: 'https://abc.public.blob.vercel-storage.com/recipes/bolo.webp',
     ...over,
   }
+}
+
+/** JSON-LD de uma entrada COM foto (o builder só devolve `null` sem imagem — ADR-0060). */
+function ldOf(input: RecipeSeoInput) {
+  const ld = buildRecipeJsonLd(input)
+  if (ld == null) throw new Error('esperava JSON-LD (a fixture tem imagem)')
+  return ld
 }
 
 describe('buildRecipeMetadata — OG (#232)', () => {
@@ -97,7 +107,7 @@ describe('buildRecipeMetadata — OG (#232)', () => {
     const meta = buildRecipeMetadata(input)
     expect(meta.openGraph?.description).toBeUndefined()
     expect(meta.description).toBeUndefined()
-    const ld = buildRecipeJsonLd(input)
+    const ld = ldOf(input)
     expect(ld.description).toBeUndefined()
   })
 })
@@ -148,7 +158,7 @@ describe('buildRecipeMetadata — canonical + hreflang + x-default + robots (#23
 
 describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
   it('emite Recipe com name/description/ingredientes/passos(HowToStep)/inLanguage', () => {
-    const ld = buildRecipeJsonLd(baseInput())
+    const ld = ldOf(baseInput())
     expect(ld['@context']).toBe('https://schema.org')
     expect(ld['@type']).toBe('Recipe')
     expect(ld.name).toBe('Bolo de Cenoura')
@@ -159,26 +169,28 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
       '3 ovos',
       '2 xícaras de farinha',
     ])
+    // ADR-0060: cada passo aponta para a âncora `#passo-N` da página canônica (sem `name`).
+    const page = `${BASE}/pt-BR/recipes/bolo-de-cenoura`
     expect(ld.recipeInstructions).toEqual([
-      { '@type': 'HowToStep', text: 'Bata os líquidos.' },
-      { '@type': 'HowToStep', text: 'Misture os secos.' },
-      { '@type': 'HowToStep', text: 'Asse por 40 minutos.' },
+      { '@type': 'HowToStep', text: 'Bata os líquidos.', url: `${page}#passo-1` },
+      { '@type': 'HowToStep', text: 'Misture os secos.', url: `${page}#passo-2` },
+      { '@type': 'HowToStep', text: 'Asse por 40 minutos.', url: `${page}#passo-3` },
     ])
   })
 
   it('image = a foto VISÍVEL da receita (URL absoluta) quando há', () => {
     const url = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
-    const ld = buildRecipeJsonLd(baseInput({ imageUrl: url }))
+    const ld = ldOf(baseInput({ imageUrl: url }))
     expect(ld.image).toBe(url)
   })
 
   it('author quando há dono humano (sem fonte)', () => {
-    const ld = buildRecipeJsonLd(baseInput({ author: { name: 'Maria', handle: 'maria' } }))
+    const ld = ldOf(baseInput({ author: { name: 'Maria', handle: 'maria' } }))
     expect(ld.author).toEqual({ '@type': 'Person', name: 'Maria' })
   })
 
   it('isBasedOn/fonte quando web_imported (creditа a fonte externa, não o importador)', () => {
-    const ld = buildRecipeJsonLd(
+    const ld = ldOf(
       baseInput({
         author: undefined,
         source: { url: 'https://exemplo.com/receita', name: 'Site Exemplo' },
@@ -190,12 +202,12 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
   })
 
   it('inLanguage acompanha o locale corrente', () => {
-    const ld = buildRecipeJsonLd(baseInput({ locale: 'en-US' }))
+    const ld = ldOf(baseInput({ locale: 'en-US' }))
     expect(ld.inLanguage).toBe('en-US')
   })
 
   it('mapeia recipeYield←porções, recipeCuisine←cozinha, recipeCategory←categoria, datePublished (ADR-0020 dec.7)', () => {
-    const ld = buildRecipeJsonLd(
+    const ld = ldOf(
       baseInput({
         porcoes: 4,
         cozinha: 'brasileira',
@@ -210,7 +222,7 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
   })
 
   it('OMITE recipeYield/recipeCuisine/recipeCategory/datePublished quando ausentes (chave vazia não sai)', () => {
-    const ld = buildRecipeJsonLd(
+    const ld = ldOf(
       baseInput({ porcoes: null, cozinha: null, categoria: null, datePublished: null }),
     )
     expect('recipeYield' in ld).toBe(false)
@@ -222,7 +234,7 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
   it('suitableForDiet mapeia SÓ as restrições com RestrictedDiet válido (lossy é OMITIDA)', () => {
     // sem_gluten/vegano mapeiam; sem_acucar/low_carb NÃO têm equivalente schema.org ⇒ OMITIDAS
     // (nunca enum inválido — risco de ação manual do Google).
-    const ld = buildRecipeJsonLd(
+    const ld = ldOf(
       baseInput({ restricoes: ['sem_gluten', 'vegano', 'sem_acucar', 'low_carb'] }),
     )
     expect(ld.suitableForDiet).toEqual([
@@ -232,12 +244,12 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
   })
 
   it('suitableForDiet AUSENTE quando NENHUMA restrição mapeia (só lossy) — não emite array vazio', () => {
-    const ld = buildRecipeJsonLd(baseInput({ restricoes: ['sem_acucar', 'low_carb'] }))
+    const ld = ldOf(baseInput({ restricoes: ['sem_acucar', 'low_carb'] }))
     expect('suitableForDiet' in ld).toBe(false)
   })
 
   it('suitableForDiet AUSENTE quando não há restrição', () => {
-    const ld = buildRecipeJsonLd(baseInput({ restricoes: [] }))
+    const ld = ldOf(baseInput({ restricoes: [] }))
     expect('suitableForDiet' in ld).toBe(false)
   })
 })
@@ -246,7 +258,7 @@ describe('buildRecipeJsonLd — aggregateRating (#367, ADR-0027 dec.6)', () => {
   it('emite aggregateRating com média CRUA + contagem REAL quando count ≥ 1 e elegível (default)', () => {
     // Média genuína de Avaliação (#363/ADR-0027 dec.6) vira `AggregateRating`. `ratingCount` E
     // `reviewCount` = a contagem REAL (dois nomes do mesmo número no schema.org).
-    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 4.6, count: 23 } }))
+    const ld = ldOf(baseInput({ rating: { value: 4.6, count: 23 } }))
     expect(ld.aggregateRating).toEqual({
       '@type': 'AggregateRating',
       ratingValue: 4.6,
@@ -256,24 +268,24 @@ describe('buildRecipeJsonLd — aggregateRating (#367, ADR-0027 dec.6)', () => {
   })
 
   it('OMITE aggregateRating quando count === 0', () => {
-    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 0, count: 0 } }))
+    const ld = ldOf(baseInput({ rating: { value: 0, count: 0 } }))
     expect('aggregateRating' in ld).toBe(false)
   })
 
   it('OMITE aggregateRating quando rating ausente OU null (sem avaliações)', () => {
-    expect('aggregateRating' in buildRecipeJsonLd(baseInput())).toBe(false)
-    expect('aggregateRating' in buildRecipeJsonLd(baseInput({ rating: null }))).toBe(false)
+    expect('aggregateRating' in ldOf(baseInput())).toBe(false)
+    expect('aggregateRating' in ldOf(baseInput({ rating: null }))).toBe(false)
   })
 
   it('OMITE aggregateRating quando NÃO elegível (noindex/privado) mesmo com count ≥ 1', () => {
     // Mesmo gate do robots noindex (#233): uma receita fora do índice não emite structured data
     // de rating pro grafo. `eligible: false` cala o aggregateRating ainda que haja avaliações.
-    const ld = buildRecipeJsonLd(baseInput({ eligible: false, rating: { value: 5, count: 10 } }))
+    const ld = ldOf(baseInput({ eligible: false, rating: { value: 5, count: 10 } }))
     expect('aggregateRating' in ld).toBe(false)
   })
 
   it('emite p/ COMUNIDADE (com autor humano) E p/ CATÁLOGO (sem autor) — o builder é agnóstico', () => {
-    const comunidade = buildRecipeJsonLd(
+    const comunidade = ldOf(
       baseInput({ author: { name: 'Maria', handle: 'maria' }, rating: { value: 4.2, count: 8 } }),
     )
     expect(comunidade.aggregateRating).toEqual({
@@ -282,7 +294,7 @@ describe('buildRecipeJsonLd — aggregateRating (#367, ADR-0027 dec.6)', () => {
       ratingCount: 8,
       reviewCount: 8,
     })
-    const catalogo = buildRecipeJsonLd(
+    const catalogo = ldOf(
       baseInput({ author: undefined, rating: { value: 4.2, count: 8 } }),
     )
     expect(catalogo.aggregateRating).toEqual({
@@ -296,7 +308,7 @@ describe('buildRecipeJsonLd — aggregateRating (#367, ADR-0027 dec.6)', () => {
   it('NUNCA Bayesiano: o ratingValue emitido é EXATAMENTE a média crua passada (5★ em 1 avaliação)', () => {
     // O Bayesiano (#368) só ORDENA o ranking (suprime 5★/1 nota); o MARKUP carrega a média crua
     // genuína, INALTERADA — o builder não faz nenhuma transformação estatística.
-    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 5, count: 1 } }))
+    const ld = ldOf(baseInput({ rating: { value: 5, count: 1 } }))
     expect(ld.aggregateRating?.ratingValue).toBe(5)
     expect(ld.aggregateRating?.ratingCount).toBe(1)
     expect(ld.aggregateRating?.reviewCount).toBe(1)
@@ -305,9 +317,9 @@ describe('buildRecipeJsonLd — aggregateRating (#367, ADR-0027 dec.6)', () => {
   it('arredonda ratingValue a 1 casa decimal (casa com o display da página: 4,3333 → 4,3)', () => {
     // O Google exige que o número do markup esteja VISÍVEL na página; a seção de Avaliações mostra
     // a média com 1 casa (toLocaleString), então o markup usa a MESMA precisão.
-    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 4.3333, count: 9 } }))
+    const ld = ldOf(baseInput({ rating: { value: 4.3333, count: 9 } }))
     expect(ld.aggregateRating?.ratingValue).toBe(4.3)
-    const ld2 = buildRecipeJsonLd(baseInput({ rating: { value: 4.35, count: 4 } }))
+    const ld2 = ldOf(baseInput({ rating: { value: 4.35, count: 4 } }))
     expect(ld2.aggregateRating?.ratingValue).toBe(4.4)
   })
 })
@@ -318,20 +330,20 @@ describe('serializeJsonLd — string segura pro <script> (XSS de </script>)', ()
   // Parametriza o payload perigoso por MAIS DE UM campo: texto livre (name/description) E uma URL
   // (image via imageUrl, isBasedOn via source.url). Prova que o escape cobre TODO campo serializado,
   // não só o `name`. Cada caso constrói o input que faz aquele campo carregar o payload.
-  const cases: Array<{ field: string; build: () => ReturnType<typeof buildRecipeJsonLd> }> = [
-    { field: 'name', build: () => buildRecipeJsonLd(baseInput({ name: `Bolo ${PAYLOAD}` })) },
+  const cases: Array<{ field: string; build: () => ReturnType<typeof ldOf> }> = [
+    { field: 'name', build: () => ldOf(baseInput({ name: `Bolo ${PAYLOAD}` })) },
     {
       field: 'description',
-      build: () => buildRecipeJsonLd(baseInput({ description: `Fofo ${PAYLOAD}` })),
+      build: () => ldOf(baseInput({ description: `Fofo ${PAYLOAD}` })),
     },
     {
       field: 'image',
-      build: () => buildRecipeJsonLd(baseInput({ imageUrl: `https://x/${PAYLOAD}.webp` })),
+      build: () => ldOf(baseInput({ imageUrl: `https://x/${PAYLOAD}.webp` })),
     },
     {
       field: 'isBasedOn',
       build: () =>
-        buildRecipeJsonLd(
+        ldOf(
           baseInput({ author: undefined, source: { url: `https://x/${PAYLOAD}` } }),
         ),
     },
@@ -353,7 +365,7 @@ describe('serializeJsonLd — string segura pro <script> (XSS de </script>)', ()
   }
 
   it('serializa um objeto COM aggregateRating (#367) válido e ainda escapa o `<`', () => {
-    const ld = buildRecipeJsonLd(
+    const ld = ldOf(
       baseInput({ name: `Bolo ${PAYLOAD}`, rating: { value: 4.6, count: 23 } }),
     )
     const s = serializeJsonLd(ld)
@@ -389,18 +401,67 @@ describe('minutosParaISO8601 (#262, ADR-0023 dec.4)', () => {
 
 describe('buildRecipeJsonLd — totalTime (#262, fecha #234)', () => {
   it('emite totalTime (ISO 8601) quando tempo_total presente', () => {
-    const ld = buildRecipeJsonLd(baseInput({ tempoTotalMin: 90 }))
+    const ld = ldOf(baseInput({ tempoTotalMin: 90 }))
     expect(ld.totalTime).toBe('PT1H30M')
   })
 
   it('OMITE totalTime quando tempo_total ausente (chave não sai)', () => {
-    const ld = buildRecipeJsonLd(baseInput({ tempoTotalMin: null }))
+    const ld = ldOf(baseInput({ tempoTotalMin: null }))
     expect('totalTime' in ld).toBe(false)
   })
 
   it('NUNCA emite prepTime nem cookTime (ADR-0023 dec.4 — só totalTime)', () => {
-    const ld = buildRecipeJsonLd(baseInput({ tempoTotalMin: 90 }))
+    const ld = ldOf(baseInput({ tempoTotalMin: 90 }))
     expect('prepTime' in ld).toBe(false)
     expect('cookTime' in ld).toBe(false)
+  })
+})
+
+describe('buildRecipeJsonLd — correções do Search Console (ADR-0060)', () => {
+  it('SEM foto visível ⇒ null (sem JSON-LD Recipe: `image` é obrigatório e o card de marca não é o prato)', () => {
+    expect(buildRecipeJsonLd(baseInput({ imageUrl: undefined }))).toBeNull()
+    expect(buildRecipeJsonLd(baseInput({ imageUrl: '' }))).toBeNull()
+  })
+
+  it('catálogo editorial sem dono ⇒ author Organization = a marca', () => {
+    const ld = ldOf(baseInput({ editorialCatalog: true }))
+    expect(ld.author).toEqual({ '@type': 'Organization', name: 'Refogando' })
+  })
+
+  it('autor humano vence o catálogo; importada NÃO ganha autor (só isBasedOn); comunidade sem autor visível fica sem', () => {
+    expect(ldOf(baseInput({ editorialCatalog: true, author: { name: 'Maria', handle: 'maria' } })).author).toEqual({
+      '@type': 'Person',
+      name: 'Maria',
+    })
+    const importada = ldOf(baseInput({ editorialCatalog: true, source: { url: 'https://ex.com/r', name: 'Ex' } }))
+    expect(importada.author).toBeUndefined()
+    expect(importada.isBasedOn).toBe('https://ex.com/r')
+    expect(ldOf(baseInput({ editorialCatalog: false })).author).toBeUndefined()
+  })
+
+  it('keywords = tags visíveis, sem repetir cozinha/categoria (acento/caixa/_ ignorados) nem duplicatas', () => {
+    const ld = ldOf(
+      baseInput({
+        cozinha: 'Brasileira',
+        categoria: 'Prato principal',
+        tags: ['rápido', 'brasileira', 'prato_principal', 'Rapido', ' festa junina ', ''],
+      }),
+    )
+    expect(ld.keywords).toBe('rápido, festa junina')
+  })
+
+  it('sem tags (ou só tags que repetem cozinha/categoria) ⇒ sem keywords', () => {
+    expect('keywords' in ldOf(baseInput({ tags: [] }))).toBe(false)
+    expect('keywords' in ldOf(baseInput({ cozinha: 'Italiana', tags: ['italiana'] }))).toBe(false)
+  })
+
+  it('HowToStep sem `url` quando não há slug do locale (sem URL canônica para ancorar)', () => {
+    const ld = ldOf(baseInput({ slugsByLocale: { 'en-US': 'carrot-cake' } }))
+    expect(ld.recipeInstructions?.[0]).toEqual({ '@type': 'HowToStep', text: 'Bata os líquidos.' })
+  })
+
+  it('recipeStepAnchorId é 1-based (`passo-1`) — o mesmo id que o detalhe põe no <li>', () => {
+    expect(recipeStepAnchorId(0)).toBe('passo-1')
+    expect(recipeStepAnchorId(9)).toBe('passo-10')
   })
 })
